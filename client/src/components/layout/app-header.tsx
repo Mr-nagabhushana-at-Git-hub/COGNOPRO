@@ -1,81 +1,94 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Rocket } from "lucide-react";
+import { Bell, Sparkles, Menu, X } from "lucide-react";
+import type { Notification } from "@shared/schema";
 import MonkModeModal from "@/components/modals/monk-mode-modal";
 
 export default function AppHeader() {
   const [isMonkModeOpen, setIsMonkModeOpen] = useState(false);
 
-  const { data: notifications } = useQuery({
+  const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications/unread"],
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   const unreadCount = notifications?.length || 0;
 
   return (
     <>
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-[hsla(225,22%,6%,0.85)] backdrop-blur-xl">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 gradient-bg rounded-lg flex items-center justify-center">
-                  <Rocket className="text-white h-4 w-4" />
-                </div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                  ProFlow
+            {/* Brand */}
+            <div className="flex items-center gap-3">
+              <motion.div
+                className="relative w-9 h-9 rounded-xl gradient-bg flex items-center justify-center"
+                whileHover={{ scale: 1.08, rotate: 5 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Sparkles className="text-white h-4.5 w-4.5" />
+                <div className="absolute inset-0 rounded-xl gradient-bg opacity-50 blur-md -z-10" />
+              </motion.div>
+              <div className="flex items-baseline gap-2">
+                <h1 className="text-xl font-extrabold gradient-text tracking-tight">
+                  COGNO
                 </h1>
+                <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                  Pro
+                </span>
               </div>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              {/* Monk Mode Toggle */}
+
+            {/* Right controls */}
+            <div className="flex items-center gap-2">
+              {/* Monk Mode */}
               <Button
                 variant="outline"
-                className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+                size="sm"
+                className="relative border-[hsla(280,72%,58%,0.3)] bg-[hsla(280,72%,58%,0.08)] text-[hsl(280,72%,75%)] hover:bg-[hsla(280,72%,58%,0.15)] hover:border-[hsla(280,72%,58%,0.5)] transition-all"
                 onClick={() => setIsMonkModeOpen(true)}
                 data-testid="button-monk-mode"
               >
-                <span className="hidden sm:inline mr-2">🧘</span>
-                <span className="font-medium">Monk Mode</span>
+                <span className="mr-1.5">🧘</span>
+                <span className="hidden sm:inline font-medium text-xs">Monk Mode</span>
               </Button>
-              
+
               {/* Notifications */}
               <div className="relative">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                  size="icon"
+                  className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/5"
                   data-testid="button-notifications"
                 >
-                  <Bell className="h-5 w-5" />
+                  <Bell className="h-4 w-4" />
                   {unreadCount > 0 && (
-                    <Badge 
-                      variant="destructive" 
-                      className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
+                    <Badge
+                      variant="destructive"
+                      className="absolute -top-0.5 -right-0.5 h-4 min-w-4 flex items-center justify-center p-0 text-[10px] glow-danger"
                     >
-                      {unreadCount > 9 ? '9+' : unreadCount}
+                      {unreadCount > 9 ? "9+" : unreadCount}
                     </Badge>
                   )}
                 </Button>
               </div>
-              
-              {/* User Profile */}
-              <div className="flex items-center space-x-3">
-                <img 
-                  src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=40&h=40" 
-                  alt="User avatar" 
-                  className="w-10 h-10 rounded-full ring-2 ring-primary-100"
-                  data-testid="img-avatar"
-                />
+
+              {/* Avatar */}
+              <div className="flex items-center gap-2.5 ml-1">
+                <div className="relative">
+                  <div className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center text-xs font-bold text-white">
+                    N
+                  </div>
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[hsl(225,22%,6%)]" />
+                </div>
                 <div className="hidden md:block">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white" data-testid="text-username">
-                    Alex Johnson
+                  <p className="text-sm font-semibold text-foreground leading-tight" data-testid="text-username">
+                    Nagabhushana
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Pro Member</p>
+                  <p className="text-[10px] text-muted-foreground">Architect</p>
                 </div>
               </div>
             </div>
@@ -83,7 +96,7 @@ export default function AppHeader() {
         </div>
       </header>
 
-      <MonkModeModal 
+      <MonkModeModal
         isOpen={isMonkModeOpen}
         onClose={() => setIsMonkModeOpen(false)}
       />

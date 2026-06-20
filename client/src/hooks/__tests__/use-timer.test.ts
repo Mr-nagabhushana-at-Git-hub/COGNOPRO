@@ -8,13 +8,14 @@ describe('useTimer', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   it('should initialize with default state', () => {
     const { result } = renderHook(() => useTimer(25 * 60)); // 25 minutes
 
-    expect(result.current.timeLeft).toBe(25 * 60);
+    expect(result.current.time).toBe(25 * 60);
     expect(result.current.isRunning).toBe(false);
   });
 
@@ -31,7 +32,7 @@ describe('useTimer', () => {
       vi.advanceTimersByTime(1000);
     });
 
-    expect(result.current.timeLeft).toBe(9);
+    expect(result.current.time).toBe(9);
   });
 
   it('should pause timer', () => {
@@ -50,7 +51,7 @@ describe('useTimer', () => {
     });
 
     expect(result.current.isRunning).toBe(false);
-    expect(result.current.timeLeft).toBe(7);
+    expect(result.current.time).toBe(7);
   });
 
   it('should reset timer to initial value', () => {
@@ -62,7 +63,7 @@ describe('useTimer', () => {
       result.current.reset();
     });
 
-    expect(result.current.timeLeft).toBe(10);
+    expect(result.current.time).toBe(10);
     expect(result.current.isRunning).toBe(false);
   });
 });

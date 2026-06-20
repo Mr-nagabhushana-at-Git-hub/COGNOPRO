@@ -131,7 +131,7 @@ export default function EisenhowerMatrix() {
                       >
                         <div className="flex items-start space-x-2">
                           <Checkbox
-                            checked={task.completed}
+                    checked={Boolean(task.completed)}
                             onCheckedChange={() => toggleTask(task.id)}
                             className="mt-0.5"
                             data-testid={`checkbox-${task.id}`}

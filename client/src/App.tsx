@@ -9,6 +9,7 @@ import Tasks from "@/pages/tasks";
 import BrainTraining from "@/pages/brain-training";
 import Fitness from "@/pages/fitness";
 import Wellness from "@/pages/wellness";
+import HealthPredict from "@/pages/health-predict";
 import AppHeader from "@/components/layout/app-header";
 import Sidebar from "@/components/layout/sidebar";
 
@@ -20,23 +21,35 @@ function Router() {
       <Route path="/brain-training" component={BrainTraining} />
       <Route path="/fitness" component={Fitness} />
       <Route path="/wellness" component={Wellness} />
+      <Route path="/health-predict" component={HealthPredict} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
+import { useState } from "react";
+import Auth from "@/pages/auth";
+
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-          <AppHeader />
-          <div className="flex">
-            <Sidebar />
-            <main className="flex-1">
-              <Router />
-            </main>
-          </div>
+        <div className="min-h-screen bg-background text-foreground relative">
+          {!isAuthenticated ? (
+            <Auth onLogin={() => setIsAuthenticated(true)} />
+          ) : (
+            <>
+              <AppHeader />
+              <div className="flex">
+                <Sidebar />
+                <main className="flex-1 min-h-[calc(100vh-64px)] overflow-y-auto">
+                  <Router />
+                </main>
+              </div>
+            </>
+          )}
         </div>
         <Toaster />
       </TooltipProvider>

@@ -3,6 +3,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { FocusSession, InsertFocusSession } from "@shared/schema";
 
+type FocusSessionInput = Omit<InsertFocusSession, "userId">;
+
 export function useFocusSession() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -29,7 +31,7 @@ export function useFocusSession() {
 
   // Create focus session mutation
   const startSessionMutation = useMutation({
-    mutationFn: async (sessionData: InsertFocusSession) => {
+    mutationFn: async (sessionData: FocusSessionInput) => {
       // End any existing active session first
       if (activeSession) {
         await apiRequest('PATCH', `/api/focus-sessions/${activeSession.id}`, {
@@ -81,7 +83,7 @@ export function useFocusSession() {
   });
 
   // Helper functions
-  const startSession = async (sessionData: InsertFocusSession) => {
+  const startSession = async (sessionData: FocusSessionInput) => {
     return startSessionMutation.mutateAsync(sessionData);
   };
 

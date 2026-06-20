@@ -3,6 +3,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Task, InsertTask } from "@shared/schema";
 
+type TaskInput = Omit<InsertTask, "userId">;
+
 export function useTasks() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -20,7 +22,7 @@ export function useTasks() {
 
   // Create task mutation
   const createTaskMutation = useMutation({
-    mutationFn: async (taskData: InsertTask) => {
+    mutationFn: async (taskData: TaskInput) => {
       const response = await apiRequest('POST', '/api/tasks', taskData);
       return response.json();
     },
@@ -39,7 +41,7 @@ export function useTasks() {
 
   // Update task mutation
   const updateTaskMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertTask> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TaskInput> }) => {
       const response = await apiRequest('PATCH', `/api/tasks/${id}`, data);
       return response.json();
     },
@@ -100,11 +102,11 @@ export function useTasks() {
   });
 
   // Helper functions
-  const createTask = async (taskData: InsertTask) => {
+  const createTask = async (taskData: TaskInput) => {
     return createTaskMutation.mutateAsync(taskData);
   };
 
-  const updateTask = async (id: string, data: Partial<InsertTask>) => {
+  const updateTask = async (id: string, data: Partial<TaskInput>) => {
     return updateTaskMutation.mutateAsync({ id, data });
   };
 

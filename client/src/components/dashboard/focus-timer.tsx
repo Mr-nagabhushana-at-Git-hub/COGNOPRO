@@ -183,7 +183,7 @@ export default function FocusTimer() {
             </Button>
             
             <Button
-              onClick={reset}
+              onClick={() => reset()}
               variant="ghost"
               size="sm"
               data-testid="button-reset-timer"

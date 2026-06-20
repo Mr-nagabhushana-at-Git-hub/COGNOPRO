@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Brain, Trophy, Target, Zap, Play } from "lucide-react";
 import MemoryGame from "@/components/brain-games/memory-game";
 import LogicPuzzle from "@/components/brain-games/logic-puzzle";
+import type { BrainGameScore } from "@shared/schema";
 
 export default function BrainTraining() {
   const [activeGame, setActiveGame] = useState<string | null>(null);
 
-  const { data: scores, isLoading } = useQuery({
+  const { data: scores, isLoading } = useQuery<BrainGameScore[]>({
     queryKey: ["/api/brain-games/scores"],
   });
 
@@ -28,12 +29,12 @@ export default function BrainTraining() {
     },
     {
       id: "logic",
-      title: "Logic Puzzles",
-      description: "Solve complex logical reasoning problems",
+      title: "Spatial Recall Matrix",
+      description: "Advanced visual-spatial memory training with geometric grids",
       icon: Target,
-      color: "bg-blue-500", 
+      color: "bg-[hsl(245,82%,63%)]", 
       difficulty: "Hard",
-      estimatedTime: "10-15 min",
+      estimatedTime: "5-10 min",
       component: LogicPuzzle
     },
     {
@@ -50,16 +51,16 @@ export default function BrainTraining() {
 
   const getTopScore = (gameType: string) => {
     if (!scores) return 0;
-    const gameScores = scores.filter((score: any) => score.gameType === gameType);
-    return gameScores.length > 0 ? Math.max(...gameScores.map((s: any) => s.score)) : 0;
+    const gameScores = scores.filter((score) => score.gameType === gameType);
+    return gameScores.length > 0 ? Math.max(...gameScores.map((score) => score.score)) : 0;
   };
 
   const getGameStats = (gameType: string) => {
     if (!scores) return { played: 0, avgScore: 0, bestStreak: 0 };
-    const gameScores = scores.filter((score: any) => score.gameType === gameType);
+    const gameScores = scores.filter((score) => score.gameType === gameType);
     const played = gameScores.length;
-    const avgScore = played > 0 ? Math.round(gameScores.reduce((sum: number, s: any) => sum + s.score, 0) / played) : 0;
-    return { played, avgScore, bestStreak: Math.floor(Math.random() * 10) + 1 };
+    const avgScore = played > 0 ? Math.round(gameScores.reduce((sum, score) => sum + score.score, 0) / played) : 0;
+    return { played, avgScore, bestStreak: 0 };
   };
 
   if (activeGame) {

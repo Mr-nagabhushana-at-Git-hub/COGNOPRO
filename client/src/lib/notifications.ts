@@ -1,4 +1,6 @@
+import { createElement } from "react";
 import { toast } from "@/hooks/use-toast";
+import { ToastAction, type ToastActionElement } from "@/components/ui/toast";
 
 // Notification types
 export interface NotificationOptions {
@@ -170,7 +172,9 @@ export class NotificationService {
       description: options.description,
       variant: options.variant || "default",
       duration: options.duration,
-      action: options.action,
+      action: options.action
+        ? createElement(ToastAction, { altText: options.action.label, onClick: options.action.onClick }, options.action.label) as unknown as ToastActionElement
+        : undefined,
     });
   }
 

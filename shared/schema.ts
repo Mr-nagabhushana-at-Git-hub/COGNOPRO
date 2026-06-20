@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -75,6 +75,7 @@ export const journals = pgTable("journals", {
   primaryEmotion: text("primary_emotion").notNull(),
   intensityScore: integer("intensity_score").notNull(),
   burnoutRisk: boolean("burnout_risk").default(false),
+  burnoutScore: integer("burnout_score").default(0),
   crisisFlag: boolean("crisis_flag").default(false),
   analysisSource: text("analysis_source").default("local-safety-engine"),
   createdAt: timestamp("created_at").defaultNow()
@@ -134,6 +135,28 @@ export const journalEntrySchema = z.object({
   content: z.string().trim().min(10, "Write at least 10 characters so the entry can be understood.").max(5000)
 });
 
+export const healthSymptoms = pgTable("health_symptoms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  category: text("category").default("general"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+export const diseasePredictions = pgTable("disease_predictions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  symptoms: text("symptoms").array().notNull(),
+  prediction: text("prediction").notNull(),
+  confidence: integer("confidence").notNull(),
+  topPredictions: json("top_predictions").notNull(),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Insert schemas
+export const insertHealthSymptomSchema = createInsertSchema(healthSymptoms).omit({ id: true, createdAt: true });
+export const insertDiseasePredictionSchema = createInsertSchema(diseasePredictions).omit({ id: true, createdAt: true });
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -151,3 +174,7 @@ export type Journal = typeof journals.$inferSelect;
 export type InsertJournal = z.infer<typeof insertJournalSchema>;
 export type StressTrigger = typeof stressTriggers.$inferSelect;
 export type InsertStressTrigger = z.infer<typeof insertStressTriggerSchema>;
+export type HealthSymptom = typeof healthSymptoms.$inferSelect;
+export type InsertHealthSymptom = z.infer<typeof insertHealthSymptomSchema>;
+export type DiseasePrediction = typeof diseasePredictions.$inferSelect;
+export type InsertDiseasePrediction = z.infer<typeof insertDiseasePredictionSchema>;
