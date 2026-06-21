@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState, useRef } from "react";
+import { FormEvent, useMemo, useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 import { Canvas, useFrame } from "@react-three/fiber";

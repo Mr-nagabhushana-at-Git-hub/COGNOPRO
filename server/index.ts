@@ -1,7 +1,16 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+export function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 const app = express();
 app.use(express.json());
@@ -58,9 +67,20 @@ if (!process.env.VERCEL) {
     // setting up all the other routes so the catch-all route
     // doesn't interfere with the other routes
     if (app.get("env") === "development") {
+      const viteModule = "./vite";
+      const { setupVite } = await import(viteModule /* @vite-ignore */);
       await setupVite(app, server);
     } else {
-      serveStatic(app);
+      const path = await import("path");
+      const fs = await import("fs");
+      const distPath = path.resolve(process.cwd(), "dist/public");
+      if (!fs.existsSync(distPath)) {
+        throw new Error(`Could not find the build directory: ${distPath}, make sure to build the client first`);
+      }
+      app.use(express.static(distPath));
+      app.use("*", (_req, res) => {
+        res.sendFile(path.resolve(distPath, "index.html"));
+      });
     }
 
     // ALWAYS serve the app on the port specified in the environment variable PORT
