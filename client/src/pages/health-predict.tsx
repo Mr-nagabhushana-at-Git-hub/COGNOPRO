@@ -134,7 +134,7 @@ export default function HealthPredict() {
   const [selectedSymptoms, setSelectedSymptoms] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: symptomData, isLoading: isLoadingSymptoms } = useQuery<{ categories: SymptomCategory[], totalSymptoms: number }>({
+  const { data: symptomData, isLoading: isLoadingSymptoms, error: symptomsError } = useQuery<{ categories: SymptomCategory[], totalSymptoms: number }>({
     queryKey: ["/api/health-predict/symptoms"],
   });
 
@@ -368,6 +368,11 @@ export default function HealthPredict() {
                       {isLoadingSymptoms ? (
                         <div className="flex justify-center items-center h-full">
                           <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin glow-primary" />
+                        </div>
+                      ) : symptomsError ? (
+                        <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
+                          <div className="text-red-400 font-bold">Connection Error</div>
+                          <p className="text-white/70 max-w-md">{symptomsError.message}</p>
                         </div>
                       ) : filteredSymptoms.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-64 text-center space-y-4 opacity-50">

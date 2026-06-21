@@ -32,8 +32,13 @@ export async function apiRequest(
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "same-origin",
+    credentials: "include",
   });
+
+  const contentType = res.headers.get("content-type");
+  if (contentType && contentType.includes("text/html")) {
+    throw new Error("Vercel Authentication blocked this API request. Please ensure you are logged into Vercel or bypass protection is configured.");
+  }
 
   await throwIfResNotOk(res);
   return res;
@@ -47,8 +52,13 @@ export const getQueryFn: <T>(options: {
   async ({ queryKey }) => {
     const res = await fetch(queryKey.join("/") as string, {
       headers: { "X-Device-Id": getDeviceId() },
-      credentials: "same-origin",
+      credentials: "include",
     });
+
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+      throw new Error("Vercel Authentication blocked this API request. Please ensure you are logged into Vercel or bypass protection is configured.");
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
