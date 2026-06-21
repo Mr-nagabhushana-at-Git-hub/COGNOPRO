@@ -568,6 +568,6 @@ export class MemStorage implements IStorage {
 
 import { DatabaseStorage } from "./dbStorage";
 
-export const storage: IStorage = process.env.DATABASE_URL 
+export const storage: IStorage = (process.env.DATABASE_URL || process.env.POSTGRES_URL)
   ? new DatabaseStorage() 
   : new MemStorage();
