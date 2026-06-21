@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Key, Activity, CheckCircle, Database } from "lucide-react";
+import { Save, Key, Activity, CheckCircle, Database, Trash2, ExternalLink } from "lucide-react";
 
 export default function Settings() {
   const [, setLocation] = useLocation();
@@ -75,6 +75,34 @@ export default function Settings() {
     }
   };
 
+  const clearMyData = async () => {
+    if (!confirm("Are you sure? This will permanently delete all your data including journals, focus sessions, and fitness records. This cannot be undone.")) return;
+    
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/users/data", { method: "DELETE" });
+      if (!response.ok) throw new Error("Failed to clear data");
+      
+      // Clear the local device ID to get a fresh start
+      localStorage.removeItem("FOCUSFLOW_DEVICE_ID");
+      
+      toast({
+        title: "Data Cleared",
+        description: "Your account has been completely wiped.",
+      });
+      
+      // Reload to regenerate ID and clear UI state
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Could not clear data.",
+        variant: "destructive",
+      });
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
       <motion.div
@@ -106,7 +134,12 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Google Gemini API Key (Primary)</label>
+                <label className="flex items-center justify-between text-sm font-medium text-slate-300">
+                  <span>Google Gemini API Key (Primary)</span>
+                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                    Get Key <ExternalLink className="w-3 h-3" />
+                  </a>
+                </label>
                 <Input
                   type="password"
                   placeholder="AIzaSy..."
@@ -177,6 +210,35 @@ export default function Settings() {
           </Card>
         </motion.div>
       </div>
+      {/* Danger Zone */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+      >
+        <Card className="border-red-500/20 bg-red-950/10 h-full shadow-[0_0_40px_rgba(239,68,68,0.02)]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-500">
+              <Trash2 className="w-5 h-5" />
+              Danger Zone
+            </CardTitle>
+            <CardDescription className="text-red-400/70">
+              Permanently delete all your personal data from this device's sandboxed session.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              variant="destructive" 
+              onClick={clearMyData} 
+              disabled={isSaving}
+              className="bg-red-900/50 hover:bg-red-600 text-red-200 border border-red-800"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Wipe My Data
+            </Button>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

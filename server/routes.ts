@@ -252,13 +252,13 @@ async function postJsonToPythonService(url: string, body: unknown, timeoutMs = 1
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const DEMO_USER_ID = "demo-user";
+  const getUserId = (req: any) => (req.headers["x-device-id"] || "demo-user") as string;
 
   // Settings Routes
   app.patch("/api/users/settings", async (req, res) => {
     try {
       const settings = updateUserSettingsSchema.parse(req.body);
-      const updatedUser = await storage.updateUserSettings(DEMO_USER_ID, settings);
+      const updatedUser = await storage.updateUserSettings(getUserId(req), settings);
       if (!updatedUser) return res.status(404).json({ error: "User not found" });
       res.json(updatedUser);
     } catch (error) {
@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!clientId || !clientSecret) {
         // Mock successful login if no real credentials
-        await storage.updateUserSettings(DEMO_USER_ID, {
+        await storage.updateUserSettings(getUserId(req), {
           googleFitAccessToken: "mock_access_token",
           googleFitRefreshToken: "mock_refresh_token"
         });
@@ -313,7 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tokens = await tokenResponse.json();
       if (tokens.error) throw new Error(tokens.error_description);
 
-      await storage.updateUserSettings(DEMO_USER_ID, {
+      await storage.updateUserSettings(getUserId(req), {
         googleFitAccessToken: tokens.access_token,
         googleFitRefreshToken: tokens.refresh_token || undefined
       });
@@ -328,7 +328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Fast Live Sync (Current Day Only)
   app.get("/api/fitness/sync/live", async (req, res) => {
     try {
-      const user = await storage.getUser(DEMO_USER_ID);
+      const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
         return res.status(401).json({ error: "Not connected to Google Fit" });
       }
@@ -336,7 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user.googleFitAccessToken === "mock_access_token") {
         const date = new Date();
         const data = await storage.createFitnessData({
-          userId: DEMO_USER_ID,
+          userId: getUserId(req),
           date,
           steps: Math.floor(Math.random() * 4000) + 4000,
           activeMinutes: Math.floor(Math.random() * 30) + 20,
@@ -381,7 +381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const data = await storage.createFitnessData({
-        userId: DEMO_USER_ID,
+        userId: getUserId(req),
         date: new Date(),
         steps,
         activeMinutes: Math.floor(steps / 100),
@@ -398,14 +398,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Full 5-Year History Sync
   app.post("/api/fitness/sync", async (req, res) => {
     try {
-      const user = await storage.getUser(DEMO_USER_ID);
+      const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
         return res.status(401).json({ error: "Not connected to Google Fit" });
       }
 
       if (user.googleFitAccessToken === "mock_access_token") {
         // Generate 5 years of mock data (1825 days)
-        await storage.clearFitnessData(DEMO_USER_ID);
+        await storage.clearFitnessData(getUserId(req));
         const updatedData = [];
         const now = Date.now();
         const oneDay = 24 * 60 * 60 * 1000;
@@ -418,7 +418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const finalSteps = Math.floor(baseSteps * seasonalMultiplier);
 
           updatedData.push(await storage.createFitnessData({
-            userId: DEMO_USER_ID,
+            userId: getUserId(req),
             date: bDate,
             steps: finalSteps,
             activeMinutes: Math.floor(finalSteps / 100),
@@ -472,7 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      await storage.clearFitnessData(DEMO_USER_ID);
+      await storage.clearFitnessData(getUserId(req));
 
       // Pre-fill 5 years of empty dates to ensure continuous graph
       const aggregatedByDate: Record<string, number> = {};
@@ -501,7 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedData = [];
       for (const [dateStr, steps] of Object.entries(aggregatedByDate)) {
         updatedData.push(await storage.createFitnessData({
-          userId: DEMO_USER_ID,
+          userId: getUserId(req),
           date: new Date(dateStr),
           steps,
           activeMinutes: Math.floor(steps / 100),
@@ -520,7 +520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       logFailure("FITNESS", "sync_failed_fallback_triggered", error);
       
       // Fallback to 5-year mock data generation
-      await storage.clearFitnessData(DEMO_USER_ID);
+      await storage.clearFitnessData(getUserId(req));
       const updatedData = [];
       const now = Date.now();
       const oneDay = 24 * 60 * 60 * 1000;
@@ -532,7 +532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const finalSteps = Math.floor(baseSteps * seasonalMultiplier);
 
         updatedData.push(await storage.createFitnessData({
-          userId: DEMO_USER_ID,
+          userId: getUserId(req),
           date: bDate,
           steps: finalSteps,
           activeMinutes: Math.floor(finalSteps / 100),
@@ -549,7 +549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bio-Profile Endpoint
   app.get("/api/fitness/profile", async (req, res) => {
     try {
-      const user = await storage.getUser(DEMO_USER_ID);
+      const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
         return res.status(401).json({ error: "Not connected to Google Fit" });
       }
@@ -648,7 +648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Task routes
   app.get("/api/tasks", async (req, res) => {
     try {
-      const tasks = await storage.getTasks(DEMO_USER_ID);
+      const tasks = await storage.getTasks(getUserId(req));
       res.json(tasks);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tasks" });
@@ -658,7 +658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tasks/category/:category", async (req, res) => {
     try {
       const { category } = req.params;
-      const tasks = await storage.getTasksByCategory(DEMO_USER_ID, category);
+      const tasks = await storage.getTasksByCategory(getUserId(req), category);
       res.json(tasks);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tasks by category" });
@@ -667,7 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", async (req, res) => {
     try {
-      const taskData = insertTaskSchema.parse({ ...req.body, userId: DEMO_USER_ID });
+      const taskData = insertTaskSchema.parse({ ...req.body, userId: getUserId(req) });
       const task = await storage.createTask(taskData);
       res.status(201).json(task);
     } catch (error) {
@@ -683,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const updateData = req.body;
-      const task = await storage.updateTask(id, DEMO_USER_ID, updateData);
+      const task = await storage.updateTask(id, getUserId(req), updateData);
       if (!task) {
         res.status(404).json({ error: "Task not found" });
         return;
@@ -697,7 +697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/tasks/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const success = await storage.deleteTask(id, DEMO_USER_ID);
+      const success = await storage.deleteTask(id, getUserId(req));
       if (!success) {
         res.status(404).json({ error: "Task not found" });
         return;
@@ -711,7 +711,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Focus session routes
   app.get("/api/focus-sessions", async (req, res) => {
     try {
-      const sessions = await storage.getFocusSessions(DEMO_USER_ID);
+      const sessions = await storage.getFocusSessions(getUserId(req));
       res.json(sessions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch focus sessions" });
@@ -720,7 +720,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/focus-sessions/active", async (req, res) => {
     try {
-      const session = await storage.getActiveFocusSession(DEMO_USER_ID);
+      const session = await storage.getActiveFocusSession(getUserId(req));
       res.json(session);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch active focus session" });
@@ -729,7 +729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/focus-sessions", async (req, res) => {
     try {
-      const sessionData = insertFocusSessionSchema.parse({ ...req.body, userId: DEMO_USER_ID });
+      const sessionData = insertFocusSessionSchema.parse({ ...req.body, userId: getUserId(req) });
       const session = await storage.createFocusSession(sessionData);
       res.status(201).json(session);
     } catch (error) {
@@ -745,7 +745,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const updateData = req.body;
-      const session = await storage.updateFocusSession(id, DEMO_USER_ID, updateData);
+      const session = await storage.updateFocusSession(id, getUserId(req), updateData);
       if (!session) {
         res.status(404).json({ error: "Focus session not found" });
         return;
@@ -760,7 +760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/brain-games/scores", async (req, res) => {
     try {
       const { gameType } = req.query;
-      const scores = await storage.getBrainGameScores(DEMO_USER_ID, gameType as string);
+      const scores = await storage.getBrainGameScores(getUserId(req), gameType as string);
       res.json(scores);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch brain game scores" });
@@ -771,7 +771,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { gameType } = req.params;
       const limit = parseInt(req.query.limit as string) || 10;
-      const scores = await storage.getTopScores(DEMO_USER_ID, gameType, limit);
+      const scores = await storage.getTopScores(getUserId(req), gameType, limit);
       res.json(scores);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch top scores" });
@@ -780,7 +780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/brain-games/scores", async (req, res) => {
     try {
-      const scoreData = insertBrainGameScoreSchema.parse({ ...req.body, userId: DEMO_USER_ID });
+      const scoreData = insertBrainGameScoreSchema.parse({ ...req.body, userId: getUserId(req) });
       const score = await storage.createBrainGameScore(scoreData);
       res.status(201).json(score);
     } catch (error) {
@@ -797,7 +797,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { date } = req.query;
       const targetDate = date ? new Date(date as string) : undefined;
-      const fitnessData = await storage.getFitnessData(DEMO_USER_ID, targetDate);
+      const fitnessData = await storage.getFitnessData(getUserId(req), targetDate);
       res.json(fitnessData);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch fitness data" });
@@ -806,7 +806,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/fitness", async (req, res) => {
     try {
-      const fitnessData = insertFitnessDataSchema.parse({ ...req.body, userId: DEMO_USER_ID });
+      const fitnessData = insertFitnessDataSchema.parse({ ...req.body, userId: getUserId(req) });
       const data = await storage.createFitnessData(fitnessData);
       res.status(201).json(data);
     } catch (error) {
@@ -822,7 +822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { date, ...updateData } = req.body;
       const targetDate = new Date(date);
-      const data = await storage.updateFitnessData(DEMO_USER_ID, targetDate, updateData);
+      const data = await storage.updateFitnessData(getUserId(req), targetDate, updateData);
       if (!data) {
         res.status(404).json({ error: "Fitness data not found for date" });
         return;
@@ -836,7 +836,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Notification routes
   app.get("/api/notifications", async (req, res) => {
     try {
-      const notifications = await storage.getNotifications(DEMO_USER_ID);
+      const notifications = await storage.getNotifications(getUserId(req));
       res.json(notifications);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch notifications" });
@@ -845,7 +845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/notifications/unread", async (req, res) => {
     try {
-      const notifications = await storage.getUnreadNotifications(DEMO_USER_ID);
+      const notifications = await storage.getUnreadNotifications(getUserId(req));
       res.json(notifications);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch unread notifications" });
@@ -854,7 +854,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/notifications", async (req, res) => {
     try {
-      const notificationData = insertNotificationSchema.parse({ ...req.body, userId: DEMO_USER_ID });
+      const notificationData = insertNotificationSchema.parse({ ...req.body, userId: getUserId(req) });
       const notification = await storage.createNotification(notificationData);
       res.status(201).json(notification);
     } catch (error) {
@@ -869,7 +869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/notifications/:id/read", async (req, res) => {
     try {
       const { id } = req.params;
-      const success = await storage.markNotificationRead(id, DEMO_USER_ID);
+      const success = await storage.markNotificationRead(id, getUserId(req));
       if (!success) {
         res.status(404).json({ error: "Notification not found" });
         return;
@@ -883,10 +883,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analytics endpoint
   app.get("/api/analytics", async (req, res) => {
     try {
-      const tasks = await storage.getTasks(DEMO_USER_ID);
-      const focusSessions = await storage.getFocusSessions(DEMO_USER_ID);
-      const brainScores = await storage.getBrainGameScores(DEMO_USER_ID);
-      const fitnessData = await storage.getFitnessData(DEMO_USER_ID);
+      const tasks = await storage.getTasks(getUserId(req));
+      const focusSessions = await storage.getFocusSessions(getUserId(req));
+      const brainScores = await storage.getBrainGameScores(getUserId(req));
+      const fitnessData = await storage.getFitnessData(getUserId(req));
 
       const today = new Date();
       const todayStr = today.toDateString();
@@ -953,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const topPredictions = scoreDiseaseProfiles(selectedSymptoms);
       const prediction = topPredictions[0];
       const record = await storage.createDiseasePrediction({
-        userId: DEMO_USER_ID,
+        userId: getUserId(req),
         symptoms: selectedSymptoms,
         prediction: prediction.disease,
         confidence: prediction.confidence,
@@ -1020,7 +1020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/journals", async (_req, res) => {
     try {
-      res.json(await storage.getJournals(DEMO_USER_ID));
+      res.json(await storage.getJournals(getUserId(req)));
     } catch {
       res.status(500).json({ error: "Failed to fetch journals" });
     }
@@ -1033,12 +1033,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(200).json(createCrisisResponse());
         return;
       }
-      const user = await storage.getUser(DEMO_USER_ID);
+      const user = await storage.getUser(getUserId(req));
       const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
       const analysisResult = await wellnessOrchestrator.analyze(content, userKeys);
       const analysis = analysisResult.value;
       const journal = await storage.createJournal({
-        userId: DEMO_USER_ID,
+        userId: getUserId(req),
         content,
         primaryEmotion: analysis.emotion,
         intensityScore: analysis.intensity,
@@ -1048,7 +1048,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         analysisSource: analysisResult.provider,
       });
       const triggers = await Promise.all(analysis.triggers.map((label) => storage.createStressTrigger({
-        userId: DEMO_USER_ID,
+        userId: getUserId(req),
         journalId: journal.id,
         label,
         intensity: analysis.intensity,
@@ -1067,7 +1067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const days = z.coerce.number().int().min(1).max(365).default(30).parse(req.query.days);
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      res.json(await storage.getStressTriggers(DEMO_USER_ID, since));
+      res.json(await storage.getStressTriggers(getUserId(req), since));
     } catch (error) {
       if (error instanceof z.ZodError) res.status(400).json({ error: "Invalid timeframe" });
       else res.status(500).json({ error: "Failed to fetch stress triggers" });
@@ -1113,9 +1113,9 @@ Use this multi-dimensional data to empathize deeply with the user.`;
         res.json(createCrisisResponse());
         return;
       }
-      const analyses = await getRecentAnalyses(DEMO_USER_ID);
-      const overallMetrics = await getUserOverallMetrics(DEMO_USER_ID);
-      const user = await storage.getUser(DEMO_USER_ID);
+      const analyses = await getRecentAnalyses(getUserId(req));
+      const overallMetrics = await getUserOverallMetrics(getUserId(req));
+      const user = await storage.getUser(getUserId(req));
       const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
       const result = await wellnessOrchestrator.companion({ message, analyses, overallMetrics }, userKeys);
       res.json({ type: "COMPANION", reply: result.value, provider: result.provider, fallback: result.fallback });
@@ -1141,15 +1141,15 @@ Use this multi-dimensional data to empathize deeply with the user.`;
         res.end();
         return;
       }
-      let analyses = await getRecentAnalyses(DEMO_USER_ID);
+      let analyses = await getRecentAnalyses(getUserId(req));
       if (ignoredTriggers?.length) {
         analyses = analyses.map(a => ({
           ...a,
           triggers: a.triggers.filter(t => !ignoredTriggers.includes(t))
         }));
       }
-      const overallMetrics = await getUserOverallMetrics(DEMO_USER_ID);
-      const user = await storage.getUser(DEMO_USER_ID);
+      const overallMetrics = await getUserOverallMetrics(getUserId(req));
+      const user = await storage.getUser(getUserId(req));
       const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
       for await (const token of wellnessOrchestrator.streamCompanion({ message, analyses, overallMetrics }, userKeys)) {
         res.write(`event: token\ndata: ${JSON.stringify({ token })}\n\n`);
@@ -1168,8 +1168,8 @@ Use this multi-dimensional data to empathize deeply with the user.`;
 
   app.get("/api/wellness/analytics", async (_req, res) => {
     try {
-      const journals = await storage.getJournals(DEMO_USER_ID);
-      const triggers = await storage.getStressTriggers(DEMO_USER_ID, new Date(Date.now() - 30 * 86400000));
+      const journals = await storage.getJournals(getUserId(req));
+      const triggers = await storage.getStressTriggers(getUserId(req), new Date(Date.now() - 30 * 86400000));
       const triggerFrequency = Object.entries(triggers.reduce<Record<string, number>>((acc, trigger) => {
         acc[trigger.label] = (acc[trigger.label] ?? 0) + 1;
         return acc;
@@ -1189,7 +1189,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   // ─── Task Matrix Routes ───
   app.get("/api/tasks", async (_req, res) => {
     try {
-      const tasks = await storage.getTasks(DEMO_USER_ID);
+      const tasks = await storage.getTasks(getUserId(req));
       res.json(tasks);
     } catch (error) {
       logFailure("ENGINE", "get_tasks_failed", error);
@@ -1200,7 +1200,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   app.post("/api/tasks", async (req, res) => {
     try {
       const taskData = insertTaskSchema.parse(req.body);
-      const task = await storage.createTask({ ...taskData, userId: DEMO_USER_ID });
+      const task = await storage.createTask({ ...taskData, userId: getUserId(req) });
       res.status(201).json(task);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1216,7 +1216,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
     try {
       const id = req.params.id;
       const updateData = req.body;
-      const updated = await storage.updateTask(id, DEMO_USER_ID, updateData);
+      const updated = await storage.updateTask(id, getUserId(req), updateData);
       if (!updated) {
         return res.status(404).json({ error: "Task not found" });
       }
@@ -1230,7 +1230,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   app.delete("/api/tasks/:id", async (req, res) => {
     try {
       const id = req.params.id;
-      const success = await storage.deleteTask(id, DEMO_USER_ID);
+      const success = await storage.deleteTask(id, getUserId(req));
       if (!success) {
         return res.status(404).json({ error: "Task not found" });
       }
@@ -1244,7 +1244,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   app.get("/api/tasks/category/:category", async (req, res) => {
     try {
       const category = req.params.category;
-      const tasks = await storage.getTasksByCategory(DEMO_USER_ID, category);
+      const tasks = await storage.getTasksByCategory(getUserId(req), category);
       res.json(tasks);
     } catch (error) {
       logFailure("ENGINE", "get_tasks_by_category_failed", error);
@@ -1274,7 +1274,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
       // Store prediction in DB
       try {
         await storage.createDiseasePrediction({
-          userId: DEMO_USER_ID,
+          userId: getUserId(req),
           symptoms: body.symptoms,
           prediction: result.prediction,
           confidence: Math.round(result.confidence),
@@ -1299,7 +1299,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   // Get prediction history
   app.get("/api/health-predict/history", async (_req, res) => {
     try {
-      const predictions = await storage.getDiseasePredictions(DEMO_USER_ID);
+      const predictions = await storage.getDiseasePredictions(getUserId(req));
       res.json(predictions);
     } catch (error) {
       logFailure("ENGINE", "disease_history_failed", error);
@@ -1323,3 +1323,5 @@ async function getRecentAnalyses(userId: string): Promise<JournalAnalysis[]> {
     crisis: Boolean(journal.crisisFlag),
   }));
 }
+
+app.delete("/api/users/data", async (req, res) => { await storage.clearUserData(getUserId(req)); res.json({ success: true }); });

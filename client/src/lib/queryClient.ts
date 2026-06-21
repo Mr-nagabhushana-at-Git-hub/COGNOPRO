@@ -1,4 +1,15 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { v4 as uuidv4 } from "uuid";
+
+// Generate or retrieve a persistent device ID for anonymous multi-tenant support
+const getDeviceId = () => {
+  let id = localStorage.getItem("FOCUSFLOW_DEVICE_ID");
+  if (!id) {
+    id = "user_" + uuidv4();
+    localStorage.setItem("FOCUSFLOW_DEVICE_ID", id);
+  }
+  return id;
+};
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -12,11 +23,16 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = {
+    "X-Device-Id": getDeviceId()
+  };
+  if (data) headers["Content-Type"] = "application/json";
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    credentials: "omit",
   });
 
   await throwIfResNotOk(res);
@@ -30,7 +46,8 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
+      headers: { "X-Device-Id": getDeviceId() },
+      credentials: "omit",
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

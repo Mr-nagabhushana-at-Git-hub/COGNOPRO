@@ -69,6 +69,9 @@ export interface IStorage {
   getHealthSymptoms(): Promise<HealthSymptom[]>;
   getDiseasePredictions(userId: string): Promise<DiseasePrediction[]>;
   createDiseasePrediction(prediction: InsertDiseasePrediction): Promise<DiseasePrediction>;
+  
+  // Data management
+  clearUserData(userId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -503,6 +506,31 @@ export class MemStorage implements IStorage {
     };
     this.diseasePredictions.set(prediction.id, prediction);
     return prediction;
+  }
+
+  async clearUserData(userId: string): Promise<void> {
+    if (userId !== "demo-user") {
+      this.users.delete(userId);
+    } else {
+      // Don't delete the demo user account entirely, just reset its keys
+      const demoUser = this.users.get("demo-user");
+      if (demoUser) {
+        demoUser.geminiKey = null;
+        demoUser.groqKey = null;
+        demoUser.googleFitAccessToken = null;
+        demoUser.googleFitRefreshToken = null;
+      }
+    }
+
+    // Clear all associated data for this user ID
+    Array.from(this.tasks.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.tasks.delete(k));
+    Array.from(this.focusSessions.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.focusSessions.delete(k));
+    Array.from(this.brainGameScores.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.brainGameScores.delete(k));
+    Array.from(this.fitnessData.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.fitnessData.delete(k));
+    Array.from(this.notifications.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.notifications.delete(k));
+    Array.from(this.journals.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.journals.delete(k));
+    Array.from(this.stressTriggers.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.stressTriggers.delete(k));
+    Array.from(this.diseasePredictions.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.diseasePredictions.delete(k));
   }
 }
 
