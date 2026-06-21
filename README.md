@@ -264,7 +264,4 @@ npm run preview
 - **AI Models:** Powered by Google Gemini
 - **UI Components:** Built on Radix UI primitives
 
----
-
 **Built with ❤️ for mental wellness advocacy**  
-*Submission for Prompt Wars Hackathon 2026*

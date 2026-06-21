@@ -21,6 +21,7 @@ export type CrisisResponse = z.infer<typeof crisisResponseSchema>;
 export interface CompanionContext {
   message: string;
   analyses: JournalAnalysis[];
+  overallMetrics?: string;
 }
 
 export interface ProviderResult<T> {

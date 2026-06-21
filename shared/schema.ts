@@ -8,6 +8,10 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
+  geminiKey: text("gemini_key"),
+  groqKey: text("groq_key"),
+  googleFitAccessToken: text("google_fit_access_token"),
+  googleFitRefreshToken: text("google_fit_refresh_token"),
   createdAt: timestamp("created_at").defaultNow()
 });
 
@@ -96,6 +100,11 @@ export const insertUserSchema = createInsertSchema(users).omit({
   createdAt: true
 });
 
+export const updateUserSettingsSchema = z.object({
+  geminiKey: z.string().optional(),
+  groqKey: z.string().optional(),
+});
+
 export const insertTaskSchema = createInsertSchema(tasks).omit({
   id: true,
   createdAt: true,
@@ -132,7 +141,7 @@ export const insertStressTriggerSchema = createInsertSchema(stressTriggers).omit
 });
 
 export const journalEntrySchema = z.object({
-  content: z.string().trim().min(10, "Write at least 10 characters so the entry can be understood.").max(5000)
+  content: z.string().trim().min(10, "Write at least 10 characters so the entry can be understood.")
 });
 
 export const healthSymptoms = pgTable("health_symptoms", {

@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "FocusFlow Monk Mode Blocker",
+  "version": "1.0",
+  "description": "Enforces FocusFlow Monk Mode by blocking distracting websites.",
+  "permissions": [
+    "declarativeNetRequest",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:5000/*", "http://localhost:5173/*", "https://*.vercel.app/*", "https://*.name.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

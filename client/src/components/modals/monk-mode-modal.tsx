@@ -81,7 +81,7 @@ export default function MonkModeModal({ isOpen, onClose }: MonkModeModalProps) {
   const handleStartMonkMode = async () => {
     setIsStarting(true);
     
-    // Simulate starting monk mode
+    // Simulate slight delay for dramatic effect
     setTimeout(() => {
       toast({
         title: "🧘 Monk Mode Activated",
@@ -90,11 +90,12 @@ export default function MonkModeModal({ isOpen, onClose }: MonkModeModalProps) {
       setIsStarting(false);
       onClose();
       
-      // In a real app, this would:
-      // 1. Start the timer
-      // 2. Enable website blocking
-      // 3. Disable notifications
-      // 4. Show minimal UI overlay
+      // Dispatch custom event to the global MonkModeOverlay
+      const event = new CustomEvent("monk-mode-start", { 
+        detail: { duration: settings.duration } 
+      });
+      window.dispatchEvent(event);
+      
     }, 1500);
   };
 

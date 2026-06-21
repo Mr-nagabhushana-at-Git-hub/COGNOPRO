@@ -10,6 +10,7 @@ import BrainTraining from "@/pages/brain-training";
 import Fitness from "@/pages/fitness";
 import Wellness from "@/pages/wellness";
 import HealthPredict from "@/pages/health-predict";
+import Settings from "@/pages/settings";
 import AppHeader from "@/components/layout/app-header";
 import Sidebar from "@/components/layout/sidebar";
 
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/fitness" component={Fitness} />
       <Route path="/wellness" component={Wellness} />
       <Route path="/health-predict" component={HealthPredict} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -29,6 +31,7 @@ function Router() {
 
 import { useState } from "react";
 import Auth from "@/pages/auth";
+import { MonkModeOverlay } from "@/components/monk-mode-overlay";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -52,6 +55,7 @@ function App() {
           )}
         </div>
         <Toaster />
+        <MonkModeOverlay />
       </TooltipProvider>
     </QueryClientProvider>
   );

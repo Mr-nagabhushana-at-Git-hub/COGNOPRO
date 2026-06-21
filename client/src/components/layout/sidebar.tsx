@@ -9,6 +9,7 @@ import {
   HeartHandshake,
   Stethoscope,
   Sparkles,
+  Settings,
 } from "lucide-react";
 
 const navigation = [
@@ -18,6 +19,7 @@ const navigation = [
   { name: "Health Predict", href: "/health-predict", icon: Stethoscope },
   { name: "Brain Training", href: "/brain-training", icon: Brain },
   { name: "Fitness Tracker", href: "/fitness", icon: Dumbbell },
+  { name: "Platform Settings", href: "/settings", icon: Settings },
 ];
 
 const sidebarVariants = {

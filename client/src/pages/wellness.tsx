@@ -6,7 +6,7 @@ import { OrbitControls, Stars, MeshDistortMaterial, Float, Sparkles as DreiSpark
 import * as THREE from "three";
 import {
   AlertTriangle, BookOpenText, HeartHandshake, Send,
-  ShieldCheck, Sparkles, TrendingUp, Brain, Activity
+  ShieldCheck, Sparkles, TrendingUp, Brain, Activity, Mic, MicOff, CheckSquare, Square
 } from "lucide-react";
 import {
   useCreateJournal, useJournals, useStreamingCompanion,
@@ -108,6 +108,8 @@ export default function Wellness() {
   const [entry, setEntry] = useState("");
   const [message, setMessage] = useState("");
   const [crisisSupportRequired, setCrisisSupportRequired] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [ignoredTriggers, setIgnoredTriggers] = useState<string[]>([]);
   const journals = useJournals();
   const triggers = useStressTriggers();
   const createJournal = useCreateJournal();
@@ -140,9 +142,62 @@ export default function Wellness() {
   async function submitMessage(event: FormEvent) {
     event.preventDefault();
     if (!message.trim()) return;
-    await companion.send(message.trim());
+    await companion.send(message.trim(), ignoredTriggers);
     setMessage("");
   }
+
+  const toggleVoice = () => {
+    if (isListening) return;
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice dictation is not supported in this browser.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setEntry(prev => (prev + " " + transcript).trim());
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.start();
+  };
+
+  const renderCompanionReply = (text: string) => {
+    const ytRegex = /\[YT:([a-zA-Z0-9_-]{11})\]/;
+    const match = ytRegex.exec(text);
+    if (match) {
+      const videoId = match[1];
+      const cleanText = text.replace(match[0], "").trim();
+      return (
+        <div className="space-y-4">
+          <div>{cleanText}</div>
+          <div className="rounded-xl overflow-hidden shadow-lg border border-emerald-500/30 aspect-video relative">
+            <iframe
+              className="absolute top-0 left-0 w-full h-full"
+              src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+              title="YouTube Integration"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            ></iframe>
+          </div>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center w-full py-3 bg-red-600/90 hover:bg-red-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(220,38,38,0.3)] transition-all"
+          >
+            Watch Fullscreen on YouTube
+          </a>
+        </div>
+      );
+    }
+    return <div>{text}</div>;
+  };
 
   return (
     <div className="relative min-h-[calc(100vh-64px)] w-full overflow-hidden bg-[#020617]">
@@ -222,32 +277,41 @@ export default function Wellness() {
                       value={entry}
                       onChange={(event) => setEntry(event.target.value)}
                       rows={6}
-                      maxLength={5000}
                       placeholder="Initiate brain dump... (e.g., Felt cognitive overload after the mock exam, cortisol levels spiking...)"
                       className="bg-black/40 border-white/10 text-white placeholder:text-white/20 focus:border-emerald-500/50 resize-none rounded-2xl p-4 text-base leading-relaxed"
                     />
                     <div className="flex justify-between items-center text-xs font-mono text-white/40 px-2">
                       <span>Pattern detection active</span>
-                      <span>{entry.length} / 5,000 bytes</span>
+                      <span>{entry.length} bytes</span>
                     </div>
                     
-                    <Button
-                      type="submit"
-                      disabled={entry.trim().length < 10 || createJournal.isPending}
-                      className="w-full h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-lg rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.02]"
-                    >
-                      {createJournal.isPending ? (
-                        <span className="flex items-center gap-3">
-                          <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Processing Neural Data...
-                        </span>
-                      ) : (
-                        <>
-                          <Sparkles className="mr-2 h-5 w-5" />
-                          Analyze Log
-                        </>
-                      )}
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={toggleVoice}
+                        disabled={isListening}
+                        className={`h-14 w-14 shrink-0 rounded-2xl border ${isListening ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}
+                      >
+                        {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={entry.trim().length < 10 || createJournal.isPending}
+                        className="flex-1 h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-lg rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.02]"
+                      >
+                        {createJournal.isPending ? (
+                          <span className="flex items-center gap-3">
+                            <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Processing Neural Data...
+                          </span>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-5 w-5" />
+                            Analyze Log
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </form>
                 </CardContent>
               </Card>
@@ -312,6 +376,7 @@ export default function Wellness() {
                               <stop offset="100%" stopColor="#ef4444" stopOpacity={0} />
                             </linearGradient>
                           </defs>
+                          <YAxis domain={[0, 100]} hide />
                           <Area type="monotone" dataKey="score" stroke="#ef4444" strokeWidth={3} fill="url(#burnoutGrad)" />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -335,6 +400,7 @@ export default function Wellness() {
                               <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
                             </linearGradient>
                           </defs>
+                          <YAxis domain={[0, 10]} hide />
                           <Area type="monotone" dataKey="intensity" stroke="#14b8a6" strokeWidth={3} fill="url(#emotionGrad)" />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -355,8 +421,19 @@ export default function Wellness() {
                   {triggerSummary.length === 0 && <p className="text-sm text-white/40">No vectors detected in recent logs.</p>}
                   {triggerSummary.map((trigger) => (
                     <div key={trigger.label} className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-bold text-white">{trigger.label}</span>
+                      <div className="flex justify-between text-sm items-center">
+                        <div className="flex items-center gap-3">
+                          <button 
+                            type="button"
+                            onClick={() => setIgnoredTriggers(prev => prev.includes(trigger.label) ? prev.filter(t => t !== trigger.label) : [...prev, trigger.label])}
+                            className="text-emerald-400 hover:text-emerald-300 transition-colors"
+                          >
+                            {!ignoredTriggers.includes(trigger.label) ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 opacity-50" />}
+                          </button>
+                          <span className={`font-bold ${!ignoredTriggers.includes(trigger.label) ? 'text-white' : 'text-white/40 line-through'}`}>
+                            {trigger.label}
+                          </span>
+                        </div>
                         <span className="text-white/40 font-mono">{trigger.count} hits</span>
                       </div>
                       <div className="h-2 w-full rounded-full bg-black/50 overflow-hidden border border-white/5">
@@ -382,17 +459,25 @@ export default function Wellness() {
                 </div>
                 <CardContent className="p-5">
                   <AnimatePresence mode="wait">
-                    {companion.reply ? (
+                    {companion.isStreaming && !companion.reply ? (
+                      <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-6 p-5 text-center text-emerald-400 font-mono text-sm animate-pulse">
+                        Analysing your logs...
+                      </motion.div>
+                    ) : companion.error ? (
+                      <motion.div key="error" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mb-6 rounded-2xl bg-black/40 border border-red-500/30 p-5 shadow-[inset_0_0_20px_rgba(239,68,68,0.05)] text-sm leading-relaxed text-red-400">
+                        {companion.error}
+                      </motion.div>
+                    ) : companion.reply ? (
                       <motion.div
                         key="reply"
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="mb-6 rounded-2xl bg-black/40 border border-emerald-500/30 p-5 shadow-[inset_0_0_20px_rgba(16,185,129,0.05)] text-sm leading-relaxed text-emerald-100"
+                        className="mb-6 rounded-2xl bg-black/40 border border-emerald-500/30 p-5 shadow-[inset_0_0_20px_rgba(16,185,129,0.05)] text-sm leading-relaxed text-emerald-100 whitespace-pre-wrap"
                       >
-                        {companion.reply}
+                        {renderCompanionReply(companion.reply)}
                       </motion.div>
                     ) : (
-                      <motion.div key="empty" className="mb-6 p-5 text-center text-emerald-500/30 font-mono text-sm">
+                      <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-6 p-5 text-center text-emerald-500/30 font-mono text-sm">
                         Waiting for input...
                       </motion.div>
                     )}

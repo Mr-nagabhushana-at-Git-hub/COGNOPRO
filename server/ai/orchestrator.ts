@@ -1,21 +1,31 @@
 import type { CompanionContext, JournalAnalysis, ProviderResult } from "@shared/wellness";
 import { fallbackAnalysis, fallbackCompanion } from "./deterministic-fallback";
 import { logEvent, logFailure } from "./logger";
-import { AnthropicProvider, HuggingFaceProvider, OllamaProvider, OpenAiProvider, type AiProvider } from "./providers";
+import { AnthropicProvider, HuggingFaceProvider, OllamaProvider, OpenAiProvider, GeminiProvider, GroqProvider, type AiProvider } from "./providers";
+
+export interface UserKeys {
+  gemini?: string;
+  groq?: string;
+}
 
 export class WellnessOrchestrator {
-  private readonly providers: AiProvider[] = [new OllamaProvider(), new AnthropicProvider(), new OpenAiProvider(), new HuggingFaceProvider()];
+  private readonly providers: AiProvider[] = [new GeminiProvider(), new GroqProvider(), new OllamaProvider(), new AnthropicProvider(), new OpenAiProvider(), new HuggingFaceProvider()];
 
-  async analyze(text: string): Promise<ProviderResult<JournalAnalysis>> {
+  async analyze(text: string, keys?: UserKeys): Promise<ProviderResult<JournalAnalysis>> {
     logEvent("ROUTER", "analysis_route_started");
     for (const provider of this.providers) {
-      if (!provider.configured) {
+      // Provider is configured if it has an env key OR the user provided a custom key
+      const hasUserKey = (provider.name === "gemini" && keys?.gemini) || (provider.name === "groq" && keys?.groq);
+      if (!provider.configured && !hasUserKey) {
         logEvent("PROVIDER", "provider_skipped_unconfigured", { provider: provider.name });
         continue;
       }
+      
+      const apiKey = provider.name === "gemini" ? keys?.gemini : provider.name === "groq" ? keys?.groq : undefined;
+
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-          const value = await provider.analyze(text, attempt === 2);
+          const value = await provider.analyze(text, attempt === 2, apiKey);
           logEvent("PROVIDER", "analysis_succeeded", { provider: provider.name, attempt });
           return { value, provider: provider.name, fallback: false };
         } catch (error) {
@@ -28,12 +38,16 @@ export class WellnessOrchestrator {
     return { value: fallbackAnalysis(text), provider: "deterministic-fallback", fallback: true };
   }
 
-  async companion(context: CompanionContext): Promise<ProviderResult<string>> {
+  async companion(context: CompanionContext, keys?: UserKeys): Promise<ProviderResult<string>> {
     logEvent("ROUTER", "companion_route_started", { contextEntries: context.analyses.length });
     for (const provider of this.providers) {
-      if (!provider.configured) continue;
+      const hasUserKey = (provider.name === "gemini" && keys?.gemini) || (provider.name === "groq" && keys?.groq);
+      if (!provider.configured && !hasUserKey) continue;
+      
+      const apiKey = provider.name === "gemini" ? keys?.gemini : provider.name === "groq" ? keys?.groq : undefined;
+
       try {
-        const value = await provider.companion(context);
+        const value = await provider.companion(context, apiKey);
         if (!value.trim()) throw new Error("Provider returned an empty response");
         logEvent("PROVIDER", "companion_succeeded", { provider: provider.name });
         return { value, provider: provider.name, fallback: false };
@@ -46,8 +60,8 @@ export class WellnessOrchestrator {
     return { value: fallbackCompanion(context), provider: "deterministic-fallback", fallback: true };
   }
 
-  async *streamCompanion(context: CompanionContext): AsyncGenerator<string> {
-    const result = await this.companion(context);
+  async *streamCompanion(context: CompanionContext, keys?: UserKeys): AsyncGenerator<string> {
+    const result = await this.companion(context, keys);
     for (const token of result.value.match(/\S+\s*/g) ?? []) yield token;
   }
 }

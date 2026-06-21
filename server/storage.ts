@@ -28,6 +28,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserSettings(id: string, settings: Partial<User>): Promise<User | undefined>;
 
   // Task methods
   getTasks(userId: string): Promise<Task[]>;
@@ -49,6 +50,7 @@ export interface IStorage {
   getTopScores(userId: string, gameType: string, limit?: number): Promise<BrainGameScore[]>;
 
   // Fitness methods
+  clearFitnessData(userId: string): Promise<void>;
   getFitnessData(userId: string, date?: Date): Promise<FitnessData[]>;
   createFitnessData(data: InsertFitnessData): Promise<FitnessData>;
   updateFitnessData(userId: string, date: Date, data: Partial<InsertFitnessData>): Promise<FitnessData | undefined>;
@@ -244,8 +246,16 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const user: User = { ...insertUser, id, createdAt: new Date() };
-    this.users.set(id, user);
+    this.users.set(user.id, user);
     return user;
+  }
+
+  async updateUserSettings(id: string, settings: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    const updated = { ...user, ...settings };
+    this.users.set(id, updated);
+    return updated;
   }
 
   // Task methods
@@ -362,6 +372,14 @@ export class MemStorage implements IStorage {
   }
 
   // Fitness methods
+  async clearFitnessData(userId: string): Promise<void> {
+    for (const [id, data] of this.fitnessData.entries()) {
+      if (data.userId === userId) {
+        this.fitnessData.delete(id);
+      }
+    }
+  }
+
   async getFitnessData(userId: string, date?: Date): Promise<FitnessData[]> {
     const data = Array.from(this.fitnessData.values())
       .filter(fitness => fitness.userId === userId);

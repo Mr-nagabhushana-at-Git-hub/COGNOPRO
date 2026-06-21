@@ -68,7 +68,7 @@ export function useStreamingCompanion() {
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  const send = useCallback(async (message: string) => {
+  const send = useCallback(async (message: string, ignoredTriggers: string[] = []) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -94,7 +94,7 @@ export function useStreamingCompanion() {
       const response = await fetch("/api/companion/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, ignoredTriggers }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) throw new Error(`Streaming unavailable (${response.status})`);

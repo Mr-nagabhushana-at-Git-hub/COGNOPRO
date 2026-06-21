@@ -208,7 +208,7 @@ export default function HealthPredict() {
 
       {/* Foreground Content Layer */}
       <div className="absolute inset-0 z-10 flex flex-col pointer-events-none">
-        <div className="mx-auto max-w-5xl w-full flex-1 flex flex-col p-4 sm:p-6 lg:p-8 pointer-events-auto">
+        <div className="mx-auto max-w-5xl w-full flex-1 flex flex-col min-h-0 p-4 sm:p-6 lg:p-8 pointer-events-auto">
           
           {/* Wizard Header */}
           <motion.header className="space-y-4 flex-shrink-0 mb-8" variants={itemVariants} initial="initial" animate="animate">
@@ -248,7 +248,7 @@ export default function HealthPredict() {
           {/* Wizard Steps */}
           <AnimatePresence mode="wait">
             {step === 1 && (
-              <motion.div key="step1" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col items-center justify-center">
+              <motion.div key="step1" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col items-center justify-center min-h-0">
                 <Card className="bg-[hsla(225,20%,5%,0.6)] backdrop-blur-2xl border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.15)] rounded-3xl w-full max-w-2xl overflow-hidden relative">
                   <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500" />
                   <CardHeader className="text-center pb-8 pt-10 relative z-10">
@@ -325,7 +325,7 @@ export default function HealthPredict() {
             )}
 
             {step === 2 && (
-              <motion.div key="step2" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col h-full max-h-full py-4">
+              <motion.div key="step2" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col min-h-0 py-4">
                 <Card className="bg-[hsla(225,20%,5%,0.6)] backdrop-blur-2xl rounded-3xl flex-1 flex flex-col border border-white/10 shadow-[0_0_50px_rgba(139,92,246,0.15)] overflow-hidden">
                   <CardHeader className="pb-6 border-b border-white/5 bg-black/20">
                     <div className="flex items-center gap-4">
@@ -439,7 +439,7 @@ export default function HealthPredict() {
             )}
 
             {step === 3 && predictMutation.isSuccess && predictMutation.data && (
-              <motion.div key="step3" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col items-center justify-center py-8 relative z-20">
+              <motion.div key="step3" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col items-center justify-center py-8 relative z-20 min-h-0">
                 <Card className="bg-[hsla(225,20%,5%,0.7)] backdrop-blur-3xl rounded-3xl w-full max-w-3xl border border-blue-500/30 shadow-[0_0_80px_rgba(59,130,246,0.2)] overflow-hidden">
                   <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                   
