@@ -1018,7 +1018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/journals", async (_req, res) => {
+  app.get("/api/journals", async (req, res) => {
     try {
       res.json(await storage.getJournals(getUserId(req)));
     } catch {
@@ -1105,6 +1105,14 @@ Use this multi-dimensional data to empathize deeply with the user.`;
       return "Metrics unavailable.";
     }
   }
+
+  app.get("/api/companion/metrics", async (req, res) => {
+    try {
+      res.json(await getUserOverallMetrics(getUserId(req)));
+    } catch {
+      res.status(500).json({ error: "Failed to fetch metrics" });
+    }
+  });
 
   app.post("/api/companion/chat", async (req, res) => {
     try {
@@ -1297,7 +1305,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   });
 
   // Get prediction history
-  app.get("/api/health-predict/history", async (_req, res) => {
+  app.get("/api/health-predict/history", async (req, res) => {
     try {
       const predictions = await storage.getDiseasePredictions(getUserId(req));
       res.json(predictions);
@@ -1305,6 +1313,11 @@ Use this multi-dimensional data to empathize deeply with the user.`;
       logFailure("ENGINE", "disease_history_failed", error);
       res.status(500).json({ error: "Failed to fetch prediction history" });
     }
+  });
+
+  app.delete("/api/users/data", async (req, res) => {
+    await storage.clearUserData(getUserId(req));
+    res.json({ success: true });
   });
 
   const httpServer = createServer(app);
@@ -1324,4 +1337,4 @@ async function getRecentAnalyses(userId: string): Promise<JournalAnalysis[]> {
   }));
 }
 
-app.delete("/api/users/data", async (req, res) => { await storage.clearUserData(getUserId(req)); res.json({ success: true }); });
+
