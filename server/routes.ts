@@ -250,6 +250,22 @@ async function postJsonToPythonService(url: string, body: unknown, timeoutMs = 1
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Run database migrations if DatabaseStorage is active
+  if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
+    try {
+      const { migrate } = await import("drizzle-orm/neon-http/migrator");
+      const { db } = await import("./db");
+      if (db) {
+        const path = await import("path");
+        console.log("Database URL detected. Running database migrations...");
+        await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "migrations") });
+        console.log("Database migrated successfully!");
+      }
+    } catch (err) {
+      console.error("Failed to run database migrations:", err);
+    }
+  }
+
   const getUserId = (req: any) => (req.headers["x-device-id"] || "demo-user") as string;
 
   // Google Fit Auth & Sync Routes
