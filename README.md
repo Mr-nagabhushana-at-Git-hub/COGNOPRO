@@ -6,7 +6,7 @@
 [![Gemini AI](https://img.shields.io/badge/Gemini-AI-orange)](https://ai.google.dev/)
 
 **AI-Powered Mental Wellness & Productivity Platform**  
-*Architected & Developed by [Nagabhushana](https://mr-nagabhushanaraju-s.engineer)*
+*Architected & Developed by [Nagabhushana Raju S](https://mr-nagabhushanaraju-s.engineer)*
 
 ---
 
