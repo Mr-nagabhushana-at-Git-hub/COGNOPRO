@@ -249,13 +249,16 @@ npm run preview
 2. **Offline Capability** - Service Worker caching for core features
 3. **Multi-Platform** - Responsive design (mobile, tablet, desktop)
 4. **Extensible** - Plugin architecture for custom integrations
-5. **Open Source Ready** - MIT license, community contributions welcome
+5. **Source-Available IP Protection** - Controlled under BUSL-1.1 with owner-held commercial rights
 
 ---
 
 ## 📄 License
-**Intellectual Property:** Nagabhushana  
-**License:** MIT (Open Source)
+**Created By:** Nagabhushana Raju S  
+**Intellectual Property Holder:** Nagabhushana Raju S  
+**License:** Business Source License 1.1 (`BUSL-1.1`)  
+**Copyright:** All rights reserved unless expressly granted in [LICENSE.txt](./LICENSE.txt)  
+**Warning:** Production use, commercial use, SaaS use, redistribution, or deployment without prior written consent is prohibited outside the license grant.
 
 ---
 

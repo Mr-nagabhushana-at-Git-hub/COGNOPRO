@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
   geminiKey: text("gemini_key"),
+  cerebrasKey: text("cerebras_key"),
   groqKey: text("groq_key"),
   googleFitAccessToken: text("google_fit_access_token"),
   googleFitRefreshToken: text("google_fit_refresh_token"),
@@ -94,6 +95,47 @@ export const stressTriggers = pgTable("stress_triggers", {
   createdAt: timestamp("created_at").defaultNow()
 });
 
+// Quick notes (ported from the reference mobile apps' Notes feature)
+export const notes = pgTable("notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  title: text("title").notNull().default("Untitled"),
+  content: text("content").notNull().default(""),
+  color: text("color").default("default"), // visual tag: default, indigo, emerald, amber, rose, purple
+  pinned: boolean("pinned").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Planner / calendar events (persisted locally, optionally synced to Google Calendar)
+export const events = pgTable("events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time").notNull(),
+  duration: integer("duration").notNull().default(30), // minutes
+  type: text("type").notNull().default("task"), // meeting, task, brain-training, fitness, break
+  priority: text("priority").notNull().default("medium"), // high, medium, low
+  location: text("location"),
+  googleEventId: text("google_event_id"), // set when synced to Google Calendar
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Camera-guided workout sessions (reps / form / exertion telemetry per session)
+export const workoutSessions = pgTable("workout_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  exercise: text("exercise").notNull(),
+  reps: integer("reps").notNull().default(0),
+  avgFormScore: integer("avg_form_score").notNull().default(0),
+  peakExertion: integer("peak_exertion").notNull().default(0), // 0-100
+  durationSec: integer("duration_sec").notNull().default(0),
+  caloriesBurned: integer("calories_burned").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -102,6 +144,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
 
 export const updateUserSettingsSchema = z.object({
   geminiKey: z.string().optional(),
+  cerebrasKey: z.string().optional(),
   groqKey: z.string().optional(),
 });
 
@@ -125,6 +168,8 @@ export const insertBrainGameScoreSchema = createInsertSchema(brainGameScores).om
 
 export const insertFitnessDataSchema = createInsertSchema(fitnessData).omit({
   id: true
+}).extend({
+  date: z.coerce.date().optional()
 });
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
@@ -138,6 +183,25 @@ export const insertJournalSchema = createInsertSchema(journals).omit({
 });
 
 export const insertStressTriggerSchema = createInsertSchema(stressTriggers).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertNoteSchema = createInsertSchema(notes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertEventSchema = createInsertSchema(events).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+}).extend({
+  startTime: z.coerce.date()
+});
+
+export const insertWorkoutSessionSchema = createInsertSchema(workoutSessions).omit({
   id: true,
   createdAt: true
 });
@@ -185,6 +249,12 @@ export type Journal = typeof journals.$inferSelect;
 export type InsertJournal = z.infer<typeof insertJournalSchema>;
 export type StressTrigger = typeof stressTriggers.$inferSelect;
 export type InsertStressTrigger = z.infer<typeof insertStressTriggerSchema>;
+export type Note = typeof notes.$inferSelect;
+export type InsertNote = z.infer<typeof insertNoteSchema>;
+export type Event = typeof events.$inferSelect;
+export type InsertEvent = z.infer<typeof insertEventSchema>;
+export type WorkoutSession = typeof workoutSessions.$inferSelect;
+export type InsertWorkoutSession = z.infer<typeof insertWorkoutSessionSchema>;
 export type HealthSymptom = typeof healthSymptoms.$inferSelect;
 export type InsertHealthSymptom = z.infer<typeof insertHealthSymptomSchema>;
 export type DiseasePrediction = typeof diseasePredictions.$inferSelect;

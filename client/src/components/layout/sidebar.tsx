@@ -1,22 +1,28 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import {
   Home,
   CheckSquare,
+  CalendarDays,
+  NotebookPen,
   Brain,
   Dumbbell,
   HeartHandshake,
   Stethoscope,
   Sparkles,
   Settings,
+  WandSparkles,
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
   { name: "Tasks & Matrix", href: "/tasks", icon: CheckSquare },
+  { name: "Planner", href: "/planner", icon: CalendarDays },
+  { name: "Notes", href: "/notes", icon: NotebookPen },
   { name: "Mental Wellness", href: "/wellness", icon: HeartHandshake },
   { name: "Health Predict", href: "/health-predict", icon: Stethoscope },
+  { name: "Ultra Agent", href: "/ultra", icon: WandSparkles },
   { name: "Brain Training", href: "/brain-training", icon: Brain },
   { name: "Fitness Tracker", href: "/fitness", icon: Dumbbell },
   { name: "Platform Settings", href: "/settings", icon: Settings },
@@ -37,10 +43,10 @@ const itemVariants = {
 };
 
 export default function Sidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   return (
-    <aside className="w-64 min-h-[calc(100vh-64px)] border-r border-border/50 bg-[hsl(225_22%_6%)] relative overflow-hidden shrink-0 hidden lg:block">
+    <aside className="w-64 min-h-[calc(100vh-64px)] border-r border-border/50 bg-background/75 relative overflow-hidden shrink-0 hidden lg:block backdrop-blur-xl">
       {/* Decorative gradient blur */}
       <div className="absolute top-0 left-0 w-40 h-40 bg-[hsla(245,82%,63%,0.06)] rounded-full blur-[60px] pointer-events-none" />
       <div className="absolute bottom-20 right-0 w-32 h-32 bg-[hsla(280,72%,58%,0.04)] rounded-full blur-[50px] pointer-events-none" />
@@ -57,41 +63,41 @@ export default function Sidebar() {
 
           return (
             <motion.div key={item.name} variants={itemVariants}>
-              <Link href={item.href}>
-                <a
-                  className={cn(
-                    "group flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 relative",
-                    isActive
-                      ? "text-white"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
-                  )}
-                  data-testid={`link-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  {/* Active indicator glow */}
-                  {isActive && (
-                    <motion.div
-                      layoutId="sidebar-active"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-r from-[hsla(245,82%,63%,0.15)] to-[hsla(280,72%,58%,0.10)] border border-[hsla(245,82%,63%,0.25)]"
-                      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-3">
-                    <Icon
-                      className={cn(
-                        "h-[18px] w-[18px] transition-colors",
-                        isActive
-                          ? "text-[hsl(245,82%,70%)]"
-                          : "text-muted-foreground group-hover:text-foreground"
-                      )}
-                    />
-                    {item.name}
-                  </span>
-                  {/* Active dot */}
-                  {isActive && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[hsl(245,82%,63%)] glow-primary z-10" />
-                  )}
-                </a>
-              </Link>
+              <button
+                type="button"
+                onClick={() => setLocation(item.href)}
+                className={cn(
+                  "group flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm font-medium rounded-xl transition-all duration-200 relative",
+                  isActive
+                    ? "text-white"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                )}
+                data-testid={`link-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
+              >
+                {/* Active indicator glow */}
+                {isActive && (
+                  <motion.div
+                    layoutId="sidebar-active"
+                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-[hsla(245,82%,63%,0.15)] to-[hsla(280,72%,58%,0.10)] border border-[hsla(245,82%,63%,0.25)]"
+                    transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-3">
+                  <Icon
+                    className={cn(
+                      "h-[18px] w-[18px] transition-colors",
+                      isActive
+                        ? "text-[hsl(245,82%,70%)]"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  />
+                  {item.name}
+                </span>
+                {/* Active dot */}
+                {isActive && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[hsl(245,82%,63%)] glow-primary z-10" />
+                )}
+              </button>
             </motion.div>
           );
         })}

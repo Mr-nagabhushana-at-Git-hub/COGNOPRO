@@ -1,14 +1,14 @@
 import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars, Float, Sparkles as DreiSparkles } from "@react-three/drei";
 import * as THREE from "three";
 import { 
   Activity, Stethoscope, Search, Plus, 
   X, AlertTriangle, CheckCircle2, ArrowRight,
-  ArrowLeft, Weight, Ruler
+  ArrowLeft, Weight, Ruler, BrainCircuit, DatabaseZap, Dumbbell, History
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,6 +118,11 @@ interface SymptomCategory {
 interface PredictionResponse {
   prediction: string;
   confidence: number;
+  selectedSymptoms: string[];
+  metrics?: {
+    bmi: number;
+    bmiCategory: string;
+  };
   topPredictions: {
     disease: string;
     confidence: number;
@@ -125,6 +130,28 @@ interface PredictionResponse {
     severity: "low" | "medium" | "high" | "critical";
   }[];
   source: string;
+  agentInsight?: string;
+  fitnessContext?: {
+    hasData: boolean;
+    latestSteps: number;
+    avgDailySteps30d: number;
+    totalExerciseMinutes30d: number;
+    workoutSessions30d: number;
+    latestWorkoutType: string | null;
+    avgWorkoutFormScore30d: number | null;
+    summary: string[];
+  };
+  recordId?: string;
+  recordedAt?: string;
+  recorded?: boolean;
+}
+
+interface PredictionHistoryItem {
+  id: string;
+  prediction: string;
+  confidence: number;
+  symptoms: string[];
+  createdAt: string;
 }
 
 export default function HealthPredict() {
@@ -138,12 +165,23 @@ export default function HealthPredict() {
     queryKey: ["/api/health-predict/symptoms"],
   });
 
+  const { data: predictionHistory } = useQuery<PredictionHistoryItem[]>({
+    queryKey: ["/api/health-predict/history"],
+  });
+
   const predictMutation = useMutation<PredictionResponse, Error, string[]>({
     mutationFn: async (symptoms) => {
-      const res = await apiRequest("POST", "/api/health-predict/predict", { symptoms });
+      const res = await apiRequest("POST", "/api/health-predict/predict", {
+        symptoms,
+        patientDetails: {
+          height: parseFloat(height),
+          weight: parseFloat(weight),
+        },
+      });
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-predict/history"] });
       setStep(3);
     }
   });
@@ -470,6 +508,89 @@ export default function HealthPredict() {
                     </motion.div>
 
                     <div className="space-y-6">
+                      {predictMutation.data.metrics && (
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5">
+                            <p className="text-xs uppercase tracking-[0.22em] text-blue-200/60">BMI Signal</p>
+                            <div className="mt-2 text-3xl font-black text-white">{predictMutation.data.metrics.bmi.toFixed(1)}</div>
+                            <p className="mt-1 text-sm text-blue-100/70">{predictMutation.data.metrics.bmiCategory}</p>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
+                            <p className="text-xs uppercase tracking-[0.22em] text-white/40">Inference Source</p>
+                            <div className="mt-2 text-lg font-bold text-white">{predictMutation.data.source === "ml-backend" ? "ML Backend" : "Local Ensemble Engine"}</div>
+                            <p className="mt-1 text-sm text-white/50">Recorded into longitudinal health memory.</p>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/30 p-5">
+                            <p className="text-xs uppercase tracking-[0.22em] text-white/40">Record Status</p>
+                            <div className="mt-2 text-lg font-bold text-emerald-300">{predictMutation.data.recorded ? "Saved" : "Pending"}</div>
+                            <p className="mt-1 text-sm text-white/50">
+                              {predictMutation.data.recordedAt ? new Date(predictMutation.data.recordedAt).toLocaleString() : "Awaiting persistence"}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {predictMutation.data.agentInsight && (
+                        <div className="rounded-3xl border border-fuchsia-500/20 bg-fuchsia-500/10 p-6">
+                          <div className="mb-4 flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-fuchsia-500/20 text-fuchsia-200">
+                              <BrainCircuit className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold uppercase tracking-[0.22em] text-fuchsia-200/80">Health Fusion Agent</p>
+                              <p className="text-sm text-fuchsia-100/60">BMI + symptoms + fitness telemetry reasoning</p>
+                            </div>
+                          </div>
+                          <p className="text-sm leading-7 text-fuchsia-50/90">
+                            {predictMutation.data.agentInsight}
+                          </p>
+                        </div>
+                      )}
+
+                      {predictMutation.data.fitnessContext && (
+                        <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-6">
+                          <div className="mb-5 flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-200">
+                              <Dumbbell className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold uppercase tracking-[0.22em] text-emerald-200/80">Fitness Context</p>
+                              <p className="text-sm text-emerald-100/60">
+                                {predictMutation.data.fitnessContext.hasData ? "Using synced movement history" : "No synced tracker history yet"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                              <p className="text-xs uppercase tracking-[0.18em] text-white/40">Latest Steps</p>
+                              <p className="mt-2 text-2xl font-black text-white">{predictMutation.data.fitnessContext.latestSteps.toLocaleString()}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                              <p className="text-xs uppercase tracking-[0.18em] text-white/40">Avg Steps 30d</p>
+                              <p className="mt-2 text-2xl font-black text-white">{predictMutation.data.fitnessContext.avgDailySteps30d.toLocaleString()}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                              <p className="text-xs uppercase tracking-[0.18em] text-white/40">Exercise Minutes</p>
+                              <p className="mt-2 text-2xl font-black text-white">{predictMutation.data.fitnessContext.totalExerciseMinutes30d}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                              <p className="text-xs uppercase tracking-[0.18em] text-white/40">Workout Sessions</p>
+                              <p className="mt-2 text-2xl font-black text-white">{predictMutation.data.fitnessContext.workoutSessions30d}</p>
+                            </div>
+                          </div>
+                          {predictMutation.data.fitnessContext.summary.length > 0 && (
+                            <div className="mt-5 space-y-3">
+                              {predictMutation.data.fitnessContext.summary.map((entry) => (
+                                <div key={entry} className="flex items-start gap-3 rounded-2xl border border-white/5 bg-black/20 px-4 py-3">
+                                  <DatabaseZap className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                                  <p className="text-sm leading-6 text-white/75">{entry}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest flex items-center gap-3 border-b border-white/10 pb-3">
                         <Activity className="h-5 w-5" /> Probability Matrix
                       </h3>
@@ -504,6 +625,34 @@ export default function HealthPredict() {
                               </p>
                             )}
                           </motion.div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-bold text-white/50 uppercase tracking-widest flex items-center gap-3 border-b border-white/10 pb-3">
+                        <History className="h-5 w-5" /> Recent Prediction Memory
+                      </h3>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        {(predictionHistory ?? []).slice(0, 4).map((item) => (
+                          <div key={item.id} className="rounded-2xl border border-white/10 bg-black/30 p-5">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-lg font-bold text-white">{item.prediction}</p>
+                                <p className="mt-1 text-sm text-white/45">{new Date(item.createdAt).toLocaleString()}</p>
+                              </div>
+                              <Badge variant="outline" className="border-white/10 bg-white/5 px-3 py-1 text-white/80">
+                                {item.confidence}%
+                              </Badge>
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {item.symptoms.slice(0, 4).map((symptom) => (
+                                <Badge key={symptom} className="border border-white/10 bg-white/5 text-white/65">
+                                  {symptom.replace(/_/g, " ")}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>

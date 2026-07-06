@@ -8,7 +8,9 @@ import {
   insertFitnessDataSchema,
   insertNotificationSchema,
   journalEntrySchema,
-  insertJournalSchema
+  insertJournalSchema,
+  insertNoteSchema,
+  insertEventSchema
 } from "@shared/schema";
 import { SYMPTOM_CATEGORIES, ALL_SYMPTOMS, formatSymptom, predictRequestSchema, predictWithFallback } from "./ai/disease-predictor";
 import { z } from "zod";
@@ -227,6 +229,132 @@ function scoreDiseaseProfiles(symptoms: string[]): DiseasePredictionTop[] {
   ];
 }
 
+type FitnessPredictionContext = {
+  hasData: boolean;
+  latestSteps: number;
+  avgDailySteps30d: number;
+  totalExerciseMinutes30d: number;
+  workoutSessions30d: number;
+  latestWorkoutType: string | null;
+  avgWorkoutFormScore30d: number | null;
+  summary: string[];
+};
+
+function computeBmiCategory(bmi: number): string {
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 25) return "Normal weight";
+  if (bmi < 30) return "Overweight";
+  return "Obese";
+}
+
+function buildFitnessPredictionContext(
+  fitnessData: Awaited<ReturnType<typeof storage.getFitnessData>>,
+  workoutSessions: Awaited<ReturnType<typeof storage.getWorkoutSessions>>,
+): FitnessPredictionContext {
+  const windowStart = Date.now() - 30 * 86400000;
+  const recentFitness = fitnessData.filter((entry) => entry.date && entry.date.getTime() >= windowStart);
+  const recentWorkouts = workoutSessions.filter((session) => session.createdAt && session.createdAt.getTime() >= windowStart);
+  const latestFitness = fitnessData[0];
+  const latestWorkout = workoutSessions[0];
+
+  const avgDailySteps30d = recentFitness.length
+    ? Math.round(recentFitness.reduce((sum, entry) => sum + (entry.steps ?? 0), 0) / recentFitness.length)
+    : 0;
+  const totalExerciseMinutes30d = recentFitness.reduce((sum, entry) => sum + (entry.exerciseMinutes ?? 0), 0);
+  const avgWorkoutFormScore30d = recentWorkouts.length
+    ? Math.round(recentWorkouts.reduce((sum, session) => sum + (session.avgFormScore ?? 0), 0) / recentWorkouts.length)
+    : null;
+
+  const summary: string[] = [];
+
+  if (latestFitness) {
+    summary.push(`Latest wearable snapshot logged ${latestFitness.steps ?? 0} steps and ${latestFitness.exerciseMinutes ?? 0} active minutes.`);
+  } else {
+    summary.push("No synced wearable snapshot yet, so the agent is reasoning from BMI and symptom signals only.");
+  }
+
+  if (avgDailySteps30d > 0) {
+    if (avgDailySteps30d >= 9000) {
+      summary.push("Activity trend is strong across the last 30 days, which slightly lowers sedentary-risk weightings.");
+    } else if (avgDailySteps30d >= 6000) {
+      summary.push("Activity trend is moderate; the agent keeps a balanced weighting between symptom burden and movement history.");
+    } else {
+      summary.push("Low movement trend across the last 30 days increases the relevance of recovery, metabolic, and cardiovascular caution flags.");
+    }
+  }
+
+  if (recentWorkouts.length > 0 && latestWorkout) {
+    summary.push(`Workout history shows ${recentWorkouts.length} logged sessions in the last 30 days, most recently ${latestWorkout.exercise}.`);
+  }
+
+  if (avgWorkoutFormScore30d !== null) {
+    summary.push(`Average workout form score over the last 30 days is ${avgWorkoutFormScore30d}/100.`);
+  }
+
+  return {
+    hasData: recentFitness.length > 0 || recentWorkouts.length > 0 || Boolean(latestFitness) || Boolean(latestWorkout),
+    latestSteps: latestFitness?.steps ?? 0,
+    avgDailySteps30d,
+    totalExerciseMinutes30d,
+    workoutSessions30d: recentWorkouts.length,
+    latestWorkoutType: latestFitness?.workoutType ?? latestWorkout?.exercise ?? null,
+    avgWorkoutFormScore30d,
+    summary,
+  };
+}
+
+function buildHealthPredictionInsight(params: {
+  prediction: Awaited<ReturnType<typeof predictWithFallback>>;
+  fitnessContext: FitnessPredictionContext;
+  patientDetails?: { height: number; weight: number } | undefined;
+}): string {
+  const { prediction, fitnessContext, patientDetails } = params;
+  const lines: string[] = [];
+  const bmi = prediction.metrics?.bmi ?? (
+    patientDetails?.height && patientDetails?.weight
+      ? Math.round((patientDetails.weight / Math.pow(patientDetails.height / 100, 2)) * 100) / 100
+      : null
+  );
+  const bmiCategory = prediction.metrics?.bmiCategory ?? (bmi ? computeBmiCategory(bmi) : null);
+
+  lines.push(`Primary signal cluster points to ${prediction.prediction} with ${prediction.confidence.toFixed(1)}% confidence from the active symptom set.`);
+
+  if (bmi !== null && bmiCategory) {
+    if (bmiCategory === "Normal weight") {
+      lines.push(`BMI is ${bmi.toFixed(1)} (${bmiCategory}), so body-composition risk is not the main driver in this pass.`);
+    } else if (bmiCategory === "Underweight") {
+      lines.push(`BMI is ${bmi.toFixed(1)} (${bmiCategory}), which raises extra caution around fatigue, nutritional stress, and recovery load.`);
+    } else {
+      lines.push(`BMI is ${bmi.toFixed(1)} (${bmiCategory}), so the agent increases metabolic and cardiovascular caution weighting.`);
+    }
+  }
+
+  if (fitnessContext.hasData) {
+    if (fitnessContext.avgDailySteps30d >= 9000) {
+      lines.push("Recent movement history is consistently strong, which slightly offsets sedentary-risk assumptions.");
+    } else if (fitnessContext.avgDailySteps30d >= 6000) {
+      lines.push("Recent movement history is moderate and is treated as neutral support context.");
+    } else {
+      lines.push("Recent movement history is light, so the agent leans harder on recovery, conditioning, and inflammation watchouts.");
+    }
+
+    if (fitnessContext.totalExerciseMinutes30d > 0) {
+      lines.push(`The platform has recorded ${fitnessContext.totalExerciseMinutes30d} exercise minutes and ${fitnessContext.workoutSessions30d} workout sessions over the last 30 days.`);
+    }
+  } else {
+    lines.push("No synced fitness stream is available yet, so this result is driven by the symptom graph plus BMI telemetry.");
+  }
+
+  const topAlternative = prediction.topPredictions[1];
+  if (topAlternative) {
+    lines.push(`Closest alternate pattern is ${topAlternative.disease} at ${topAlternative.confidence.toFixed(1)}%, so follow-up tracking should watch for divergence between those two pathways.`);
+  }
+
+  lines.push("This record has been written to prediction history so future checks can compare symptom drift against body and activity trends.");
+
+  return lines.join(" ");
+}
+
 async function postJsonToPythonService(url: string, body: unknown, timeoutMs = 1500): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -249,6 +377,265 @@ async function postJsonToPythonService(url: string, body: unknown, timeoutMs = 1
   }
 }
 
+const TASK_CATEGORIES = [
+  "important-urgent",
+  "important-not-urgent",
+  "not-important-urgent",
+  "not-important-not-urgent"
+] as const;
+
+type TaskCategory = typeof TASK_CATEGORIES[number];
+
+type ImportedTaskDraft = {
+  title: string;
+  description?: string | null;
+  category: TaskCategory;
+  priority: number;
+  dueDate?: Date | null;
+};
+
+function parseJsonBlock(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  return JSON.parse((fenced ?? text).trim());
+}
+
+function cleanImportedLine(line: string): string {
+  return line
+    .replace(/^\s*[-*•\d.)\]]+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clampPriority(value: number) {
+  return Math.max(1, Math.min(5, Math.round(value)));
+}
+
+function normalizeCategory(input?: string | null): TaskCategory {
+  const value = (input ?? "").trim().toLowerCase();
+  if (value.includes("do") || value.includes("urgent") || value === "important-urgent") return "important-urgent";
+  if (value.includes("schedule") || value.includes("important") || value === "important-not-urgent") return "important-not-urgent";
+  if (value.includes("delegate") || value === "not-important-urgent") return "not-important-urgent";
+  return "not-important-not-urgent";
+}
+
+function parsePossibleDate(input?: string | null): Date | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function inferCategoryFromText(text: string): TaskCategory {
+  const value = text.toLowerCase();
+  if (/(today|asap|urgent|deadline|submit|pay|fix now|immediately|tonight)/.test(value)) return "important-urgent";
+  if (/(plan|research|build|design|study|exercise|doctor|health|schedule|prepare|roadmap)/.test(value)) return "important-not-urgent";
+  if (/(reply|respond|call back|follow up|email|delegate|forward|review request)/.test(value)) return "not-important-urgent";
+  if (/(scroll|watch|browse|cleanup later|someday|maybe|misc|low priority)/.test(value)) return "not-important-not-urgent";
+  return "important-not-urgent";
+}
+
+function inferPriorityFromText(text: string, category: TaskCategory) {
+  const value = text.toLowerCase();
+  if (/(critical|asap|urgent|immediately|today|deadline)/.test(value)) return 5;
+  if (category === "important-urgent") return 4;
+  if (category === "important-not-urgent") return 3;
+  if (category === "not-important-urgent") return 2;
+  return 1;
+}
+
+function parseStructuredRows(content: string): Array<{ title: string; description?: string; dueDate?: string; priority?: number; category?: string }> {
+  const trimmed = content.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => (typeof item === "string" ? { title: item } : item))
+        .filter((item): item is { title: string; description?: string; dueDate?: string; priority?: number; category?: string } => Boolean(item && typeof item.title === "string"));
+    }
+  } catch {}
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+
+  const firstLine = lines[0].toLowerCase();
+  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : firstLine.includes(",") ? "," : null;
+  if (!delimiter) return [];
+
+  const headerCells = lines[0].split(delimiter).map((cell) => cell.trim().toLowerCase());
+  const looksStructured = headerCells.some((cell) => ["title", "task", "description", "due", "date", "priority", "category"].includes(cell));
+  if (!looksStructured) return [];
+
+  return lines.slice(1).map((line) => {
+    const cells = line.split(delimiter).map((cell) => cell.trim());
+    const row: Record<string, string> = {};
+    headerCells.forEach((header, index) => {
+      row[header] = cells[index] ?? "";
+    });
+    return {
+      title: row.title || row.task || row.name || "",
+      description: row.description || row.details || "",
+      dueDate: row.due || row.date || row.deadline || "",
+      priority: row.priority ? Number(row.priority) : undefined,
+      category: row.category || row.quadrant || row.box || "",
+    };
+  }).filter((row) => row.title);
+}
+
+function buildFallbackImportedTasks(content: string): ImportedTaskDraft[] {
+  const structuredRows = parseStructuredRows(content);
+  if (structuredRows.length) {
+    return structuredRows.slice(0, 40).map((row) => {
+      const mergedText = `${row.title} ${row.description ?? ""}`;
+      const category = normalizeCategory(row.category || inferCategoryFromText(mergedText));
+      return {
+        title: cleanImportedLine(row.title).slice(0, 160),
+        description: row.description ? cleanImportedLine(row.description).slice(0, 600) : null,
+        category,
+        priority: clampPriority(row.priority ?? inferPriorityFromText(mergedText, category)),
+        dueDate: parsePossibleDate(row.dueDate),
+      };
+    }).filter((row) => row.title.length > 2);
+  }
+
+  return content
+    .split(/\r?\n/)
+    .map(cleanImportedLine)
+    .filter((line) => line.length > 2)
+    .slice(0, 40)
+    .map((line) => {
+      const parts = line.split(/\s[-:]\s/);
+      const title = parts[0].slice(0, 160);
+      const description = parts.length > 1 ? parts.slice(1).join(" - ").slice(0, 600) : null;
+      const category = inferCategoryFromText(line);
+      return {
+        title,
+        description,
+        category,
+        priority: inferPriorityFromText(line, category),
+        dueDate: null,
+      };
+    });
+}
+
+async function classifyImportedTasksWithProviders(rawContent: string, user: Awaited<ReturnType<typeof storage.getUser>>): Promise<ImportedTaskDraft[] | null> {
+  const prompt = [
+    "You clean messy task dumps into an Eisenhower matrix.",
+    "Return JSON only as an array.",
+    "Each array item must have: title, description, category, priority, dueDate.",
+    "Valid category values: important-urgent, important-not-urgent, not-important-urgent, not-important-not-urgent.",
+    "priority must be an integer 1-5.",
+    "dueDate must be ISO date-time string or null.",
+    "Do not hallucinate extra tasks. Clean, dedupe, and normalize the real ones.",
+    "Input:",
+    rawContent.slice(0, 12000),
+  ].join("\n");
+
+  const tryParseTasks = (text: string): ImportedTaskDraft[] | null => {
+    try {
+      const parsed = parseJsonBlock(text);
+      if (!Array.isArray(parsed)) return null;
+      const tasks = parsed
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const record = item as Record<string, unknown>;
+          const title = typeof record.title === "string" ? cleanImportedLine(record.title).slice(0, 160) : "";
+          if (!title) return null;
+          const category = normalizeCategory(typeof record.category === "string" ? record.category : null);
+          return {
+            title,
+            description: typeof record.description === "string" ? cleanImportedLine(record.description).slice(0, 600) : null,
+            category,
+            priority: clampPriority(typeof record.priority === "number" ? record.priority : inferPriorityFromText(title, category)),
+            dueDate: typeof record.dueDate === "string" ? parsePossibleDate(record.dueDate) : null,
+          };
+        })
+        .filter((task): task is NonNullable<typeof task> => Boolean(task));
+      return tasks.length ? tasks.slice(0, 40) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const geminiKey = user?.geminiKey || process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 1600 }
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const body: any = await response.json();
+        const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parsed = text ? tryParseTasks(text) : null;
+        if (parsed) return parsed;
+      }
+    } catch (error) {
+      logFailure("ENGINE", "gemini_import_failed", error);
+    }
+  }
+
+  const cerebrasKey = user?.cerebrasKey || process.env.CEREBRAS_API_KEY;
+  if (cerebrasKey) {
+    try {
+      const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cerebrasKey}` },
+        body: JSON.stringify({
+          model: process.env.CEREBRAS_MODEL || "gpt-oss-120b",
+          stream: false,
+          temperature: 0,
+          max_tokens: 1600,
+          messages: [{ role: "user", content: prompt }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const body: any = await response.json();
+        const text = body?.choices?.[0]?.message?.content;
+        const parsed = text ? tryParseTasks(text) : null;
+        if (parsed) return parsed;
+      }
+    } catch (error) {
+      logFailure("ENGINE", "cerebras_import_failed", error);
+    }
+  }
+
+  const groqKey = user?.groqKey || process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          temperature: 0,
+          max_tokens: 1600,
+          messages: [{ role: "user", content: prompt }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const body: any = await response.json();
+        const text = body?.choices?.[0]?.message?.content;
+        const parsed = text ? tryParseTasks(text) : null;
+        if (parsed) return parsed;
+      }
+    } catch (error) {
+      logFailure("ENGINE", "groq_import_failed", error);
+    }
+  }
+
+  return null;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Run database migrations if DatabaseStorage is active
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
@@ -266,37 +653,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
-  const getUserId = (req: any) => (req.headers["x-device-id"] || "demo-user") as string;
-
-  // Google Fit Auth & Sync Routes
-  app.get("/api/auth/google/url", (req, res) => {
-    const clientId = process.env.GOOGLE_CLIENT_ID || "DEMO_CLIENT_ID";
+  const getUserId = (req: any) => (req.headers["x-device-id"] || "local-user") as string;
+  const getAppBaseUrl = (req: any) => {
+    const configuredBase = process.env.APP_URL?.trim().replace(/\/+$/, "");
+    if (configuredBase) return configuredBase;
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;
     const host = req.headers.host;
-    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
-    const scope = "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly https://www.googleapis.com/auth/googlehealth.profile.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/user.birthday.read https://www.googleapis.com/auth/calendar.events";
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+    return `${protocol}://${host}`;
+  };
+  const GOOGLE_OAUTH_SCOPES = [
+    "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+    "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+    "https://www.googleapis.com/auth/googlehealth.profile.readonly",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/user.birthday.read",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/youtube.readonly",
+  ].join(" ");
+
+  // Google Health / legacy Fit auth and sync routes
+  app.get("/api/auth/google/url", (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID || "DEMO_CLIENT_ID";
+    const redirectUri = `${getAppBaseUrl(req)}/api/auth/google/callback`;
+    const intent = req.query.intent === "login" ? "login" : "settings";
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${encodeURIComponent(GOOGLE_OAUTH_SCOPES)}&access_type=offline&prompt=consent&state=${encodeURIComponent(intent)}`;
     res.json({ url: authUrl });
   });
 
   app.get("/api/auth/google/callback", async (req, res) => {
     const code = req.query.code as string;
-    if (!code) return res.redirect("/settings?error=missing_code");
+    const intent = req.query.state === "login" ? "login" : "settings";
+    if (!code) return res.redirect(intent === "login" ? "/?authError=missing_code" : "/settings?error=missing_code");
 
     try {
       const clientId = process.env.GOOGLE_CLIENT_ID;
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-      const host = req.headers.host;
-      const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+      const redirectUri = `${getAppBaseUrl(req)}/api/auth/google/callback`;
       
       if (!clientId || !clientSecret) {
-        // Mock successful login if no real credentials
-        await storage.updateUserSettings(getUserId(req), {
-          googleFitAccessToken: "mock_access_token",
-          googleFitRefreshToken: "mock_refresh_token"
-        });
-        return res.redirect("/settings?success=true&demo=true");
+        return res.redirect(intent === "login" ? "/?authError=google_oauth_not_configured" : "/settings?error=google_oauth_not_configured");
       }
 
       const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -319,10 +715,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         googleFitRefreshToken: tokens.refresh_token || undefined
       });
 
-      res.redirect("/settings?success=true");
+      res.redirect(intent === "login" ? "/?auth=google&connected=true" : "/settings?success=true");
     } catch (error) {
-      logFailure("OAUTH", "google_fit_auth_failed", error);
-      res.redirect("/settings?error=auth_failed");
+      logFailure("OAUTH", "google_health_auth_failed", error);
+      res.redirect(intent === "login" ? "/?authError=auth_failed" : "/settings?error=auth_failed");
     }
   });
 
@@ -331,19 +727,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
-        return res.status(401).json({ error: "Not connected to Google Fit" });
+        return res.status(401).json({ error: "Not connected to Google Health" });
       }
 
       if (user.googleFitAccessToken === "mock_access_token") {
-        const date = new Date();
-        const data = await storage.createFitnessData({
-          userId: getUserId(req),
-          date,
-          steps: Math.floor(Math.random() * 4000) + 4000,
-          exerciseMinutes: Math.floor(Math.random() * 30) + 20,
-          caloriesBurned: Math.floor(Math.random() * 500) + 1500,
-        });
-        return res.json({ success: true, data });
+        return res.status(401).json({ error: "Stored Google token is not a real OAuth token. Reconnect Google Health." });
       }
 
       const endMillis = Date.now();
@@ -366,7 +754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
       });
 
-      if (!fitnessResponse.ok) throw new Error("Failed to fetch from Google Fit");
+      if (!fitnessResponse.ok) throw new Error("Failed to fetch from Google Health");
 
       const result = await fitnessResponse.json();
       const buckets = result.bucket || [];
@@ -400,35 +788,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
-        return res.status(401).json({ error: "Not connected to Google Fit" });
+        return res.status(401).json({ error: "Not connected to Google Health" });
       }
 
       if (user.googleFitAccessToken === "mock_access_token") {
-        // Generate 5 years of mock data (1825 days)
-        await storage.clearFitnessData(getUserId(req));
-        const updatedData = [];
-        const now = Date.now();
-        const oneDay = 24 * 60 * 60 * 1000;
-        
-        for (let i = 1825; i >= 0; i--) {
-          const bDate = new Date(now - i * oneDay);
-          const baseSteps = 4000 + Math.floor(Math.random() * 6000);
-          // Add some seasonal variation
-          const seasonalMultiplier = 1 + (Math.sin(bDate.getMonth() / 12 * Math.PI * 2) * 0.2);
-          const finalSteps = Math.floor(baseSteps * seasonalMultiplier);
-
-          updatedData.push(await storage.createFitnessData({
-            userId: getUserId(req),
-            date: bDate,
-            steps: finalSteps,
-            exerciseMinutes: Math.floor(finalSteps / 100),
-            caloriesBurned: Math.floor(finalSteps * 0.04),
-    
-          }));
-        }
-        
-        const latestData = updatedData[updatedData.length - 1];
-        return res.json({ success: true, data: latestData, history: updatedData });
+        return res.status(401).json({ error: "Stored Google token is not a real OAuth token. Reconnect Google Health." });
       }
 
       // 5-Year Chunked Fetching Strategy via Google Health API
@@ -516,33 +880,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const latestData = updatedData.length ? updatedData[updatedData.length - 1] : null;
       res.json({ success: true, data: latestData, history: updatedData });
     } catch (error: any) {
-      console.error("SYNC FAILED FULL ERROR, FALLING BACK TO MOCK DATA:", error);
-      logFailure("FITNESS", "sync_failed_fallback_triggered", error);
-      
-      // Fallback to 5-year mock data generation
-      await storage.clearFitnessData(getUserId(req));
-      const updatedData = [];
-      const now = Date.now();
-      const oneDay = 24 * 60 * 60 * 1000;
-      
-      for (let i = 1825; i >= 0; i--) {
-        const bDate = new Date(now - i * oneDay);
-        const baseSteps = 4000 + Math.floor(Math.random() * 6000);
-        const seasonalMultiplier = 1 + (Math.sin(bDate.getMonth() / 12 * Math.PI * 2) * 0.2);
-        const finalSteps = Math.floor(baseSteps * seasonalMultiplier);
-
-        updatedData.push(await storage.createFitnessData({
-          userId: getUserId(req),
-          date: bDate,
-          steps: finalSteps,
-          exerciseMinutes: Math.floor(finalSteps / 100),
-          caloriesBurned: Math.floor(finalSteps * 0.04),
-  
-        }));
-      }
-      
-      const latestData = updatedData[updatedData.length - 1];
-      res.json({ success: true, data: latestData, history: updatedData, warning: "Google Health API Blocked. Displaying AI Simulated Data." });
+      logFailure("FITNESS", "sync_failed", error);
+      res.status(502).json({ error: "Google Health sync failed. No synthetic fitness data was generated." });
     }
   });
 
@@ -551,20 +890,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUser(getUserId(req));
       if (!user?.googleFitAccessToken) {
-        return res.status(401).json({ error: "Not connected to Google Fit" });
+        return res.status(401).json({ error: "Not connected to Google Health" });
       }
 
       if (user.googleFitAccessToken === "mock_access_token") {
-        return res.json({ 
-          success: true, 
-          profile: {
-            name: "Commander Shepard",
-            picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Shepard",
-            age: 32,
-            weight: "85.2 kg",
-            height: "185 cm"
-          } 
-        });
+        return res.status(401).json({ error: "Stored Google token is not a real OAuth token. Reconnect Google Health." });
       }
 
       // Fetch People API for Name, Photo, Birthday
@@ -625,16 +955,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (e) {
         console.error("Failed to fetch Google Health Body Metrics", e);
-        weightStr = weightStr === "N/A" ? "85.2 kg" : weightStr;
-        heightStr = heightStr === "N/A" ? "185 cm" : heightStr;
       }
 
       res.json({ 
         success: true, 
         profile: { 
-          name: name === "Agent" ? "Commander Shepard" : name, 
-          picture: picture || "https://api.dicebear.com/7.x/avataaars/svg?seed=Shepard", 
-          age: age || 32, 
+          name, 
+          picture, 
+          age, 
           weight: weightStr, 
           height: heightStr 
         } 
@@ -767,6 +1095,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data);
     } catch (error) {
       res.status(500).json({ error: "Failed to update fitness data" });
+    }
+  });
+
+  // ─── AI Fitness Coach ("AI master") ───
+  // Turns on-device pose telemetry into short natural-language coaching using the
+  // user's Gemini/Groq key, with a deterministic fallback so it always responds.
+  app.post("/api/fitness/coach", async (req, res) => {
+    try {
+      const {
+        exercise = "workout", reps = 0, formScore = 0, avgFormScore = 0,
+        exertion = 0, emotion = "neutral", issues = [], durationSec = 0,
+      } = req.body ?? {};
+
+      const issuesText = Array.isArray(issues) && issues.length ? issues.slice(0, 5).join("; ") : "none notable";
+      const stats = `Exercise: ${exercise}. Reps: ${reps}. Live form score: ${formScore}/100 (session avg ${avgFormScore}/100). Effort/exertion: ${Math.round(Number(exertion) * 100)}%. Facial state: ${emotion}. Duration: ${durationSec}s. Recurring form issues: ${issuesText}.`;
+      const prompt = `You are an elite, encouraging personal fitness coach ("the AI Master"). Based ONLY on this live session telemetry, give ONE short coaching message (max 2 sentences, ~30 words). Be specific and actionable about their form (e.g. how much to bend, tempo, bracing) and end with brief motivation. No markdown, no lists.\n\n${stats}`;
+
+      const user = await storage.getUser(getUserId(req));
+      const geminiKey = user?.geminiKey || process.env.GEMINI_API_KEY;
+      const cerebrasKey = user?.cerebrasKey || process.env.CEREBRAS_API_KEY;
+      const groqKey = user?.groqKey || process.env.GROQ_API_KEY;
+
+      // Try Gemini
+      if (geminiKey) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.ok) {
+            const j: any = await r.json();
+            const text = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) return res.json({ message: text, source: "gemini" });
+          }
+        } catch (e) { logFailure("COACH", "gemini_coach_failed", e); }
+      }
+
+      // Try Cerebras
+      if (cerebrasKey) {
+        try {
+          const r = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${cerebrasKey}` },
+            body: JSON.stringify({
+              model: process.env.CEREBRAS_MODEL || "gpt-oss-120b",
+              stream: false,
+              temperature: 0.2,
+              max_tokens: 120,
+              messages: [{ role: "user", content: prompt }],
+            }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.ok) {
+            const j: any = await r.json();
+            const text = j?.choices?.[0]?.message?.content?.trim();
+            if (text) return res.json({ message: text, source: "cerebras" });
+          }
+        } catch (e) { logFailure("COACH", "cerebras_coach_failed", e); }
+      }
+
+      // Try Groq
+      if (groqKey) {
+        try {
+          const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: [{ role: "user", content: prompt }],
+              max_tokens: 80,
+              temperature: 0.7,
+            }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.ok) {
+            const j: any = await r.json();
+            const text = j?.choices?.[0]?.message?.content?.trim();
+            if (text) return res.json({ message: text, source: "groq" });
+          }
+        } catch (e) { logFailure("COACH", "groq_coach_failed", e); }
+      }
+
+      // Deterministic fallback
+      let msg: string;
+      if (Array.isArray(issues) && issues.length) {
+        msg = `${issues[0]}. Keep your tempo controlled — you're at ${reps} clean reps, stay strong!`;
+      } else if (Number(avgFormScore) >= 85) {
+        msg = `Excellent form on your ${exercise} — ${reps} solid reps at ${avgFormScore}/100. Keep that depth and control!`;
+      } else {
+        msg = `Good work on ${reps} reps. Focus on full range and a braced core to push that form score up. You've got this!`;
+      }
+      res.json({ message: msg, source: "deterministic" });
+    } catch (error) {
+      logFailure("COACH", "coach_failed", error);
+      res.status(500).json({ error: "Failed to generate coaching" });
     }
   });
 
@@ -960,7 +1386,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const user = await storage.getUser(getUserId(req));
-      const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
+      const userKeys = {
+        gemini: user?.geminiKey || undefined,
+        cerebras: user?.cerebrasKey || undefined,
+        groq: user?.groqKey || undefined
+      };
       const analysisResult = await wellnessOrchestrator.analyze(content, userKeys);
       const analysis = analysisResult.value;
       const journal = await storage.createJournal({
@@ -1050,7 +1480,11 @@ Use this multi-dimensional data to empathize deeply with the user.`;
       const analyses = await getRecentAnalyses(getUserId(req));
       const overallMetrics = await getUserOverallMetrics(getUserId(req));
       const user = await storage.getUser(getUserId(req));
-      const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
+      const userKeys = {
+        gemini: user?.geminiKey || undefined,
+        cerebras: user?.cerebrasKey || undefined,
+        groq: user?.groqKey || undefined
+      };
       const result = await wellnessOrchestrator.companion({ message, analyses, overallMetrics }, userKeys);
       res.json({ type: "COMPANION", reply: result.value, provider: result.provider, fallback: result.fallback });
     } catch (error) {
@@ -1084,7 +1518,11 @@ Use this multi-dimensional data to empathize deeply with the user.`;
       }
       const overallMetrics = await getUserOverallMetrics(getUserId(req));
       const user = await storage.getUser(getUserId(req));
-      const userKeys = { gemini: user?.geminiKey || undefined, groq: user?.groqKey || undefined };
+      const userKeys = {
+        gemini: user?.geminiKey || undefined,
+        cerebras: user?.cerebrasKey || undefined,
+        groq: user?.groqKey || undefined
+      };
       for await (const token of wellnessOrchestrator.streamCompanion({ message, analyses, overallMetrics }, userKeys)) {
         res.write(`event: token\ndata: ${JSON.stringify({ token })}\n\n`);
       }
@@ -1137,8 +1575,46 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   app.post("/api/health-predict/predict", async (req, res) => {
     try {
       const { symptoms, patientDetails } = predictRequestSchema.parse(req.body);
+      const userId = getUserId(req);
       const prediction = await predictWithFallback(symptoms, patientDetails);
-      res.json(prediction);
+      const [fitnessData, workoutSessions] = await Promise.all([
+        storage.getFitnessData(userId),
+        storage.getWorkoutSessions(userId),
+      ]);
+      const fitnessContext = buildFitnessPredictionContext(fitnessData, workoutSessions);
+      const agentInsight = buildHealthPredictionInsight({
+        prediction,
+        fitnessContext,
+        patientDetails: patientDetails
+          ? { height: patientDetails.height, weight: patientDetails.weight }
+          : undefined,
+      });
+
+      const record = await storage.createDiseasePrediction({
+        userId,
+        symptoms: prediction.selectedSymptoms,
+        prediction: prediction.prediction,
+        confidence: Math.round(prediction.confidence),
+        topPredictions: prediction.topPredictions,
+      });
+
+      logEvent("ENGINE", "health_prediction_recorded", {
+        userId,
+        prediction: record.prediction,
+        confidence: record.confidence,
+        bmi: prediction.metrics?.bmi ?? null,
+        fitnessDataPoints: fitnessData.length,
+        workoutSessions: workoutSessions.length,
+      });
+
+      res.json({
+        ...prediction,
+        agentInsight,
+        fitnessContext,
+        recordId: record.id,
+        recordedAt: record.createdAt,
+        recorded: true,
+      });
     } catch (e) {
       logFailure("ENGINE", "health_predict_failed", e);
       res.status(400).json({ error: "Prediction failed" });
@@ -1168,6 +1644,49 @@ Use this multi-dimensional data to empathize deeply with the user.`;
         logFailure("ENGINE", "create_task_failed", error);
         res.status(500).json({ error: "Failed to create task" });
       }
+    }
+  });
+
+  app.post("/api/tasks/import", async (req, res) => {
+    try {
+      const { fileName, content } = z.object({
+        fileName: z.string().trim().min(1).max(255),
+        content: z.string().trim().min(3).max(200000),
+      }).parse(req.body);
+
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      const aiDrafts = await classifyImportedTasksWithProviders(content, user);
+      const drafts = (aiDrafts?.length ? aiDrafts : buildFallbackImportedTasks(content)).slice(0, 40);
+
+      if (!drafts.length) {
+        return res.status(400).json({ error: `No usable tasks found in ${fileName}.` });
+      }
+
+      const created = [];
+      for (const draft of drafts) {
+        created.push(await storage.createTask({
+          userId,
+          title: draft.title,
+          description: draft.description ?? null,
+          category: draft.category,
+          completed: false,
+          priority: draft.priority,
+          dueDate: draft.dueDate ?? null,
+        }));
+      }
+
+      res.status(201).json({
+        importedCount: created.length,
+        mode: aiDrafts?.length ? "ai" : "heuristic",
+        created,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid import payload", details: error.errors });
+      }
+      logFailure("ENGINE", "task_import_failed", error);
+      res.status(500).json({ error: "Failed to import tasks" });
     }
   });
 
@@ -1207,9 +1726,8 @@ Use this multi-dimensional data to empathize deeply with the user.`;
         return res.status(401).json({ error: "Google account not connected" });
       }
 
-      // If mock token, just return success for demo users
       if (user.googleFitAccessToken === "mock_access_token") {
-        return res.json({ success: true, message: "Mock synced to calendar" });
+        return res.status(401).json({ error: "Stored Google token is not a real OAuth token. Reconnect Google Calendar." });
       }
 
       const taskId = req.params.id;
@@ -1249,6 +1767,68 @@ Use this multi-dimensional data to empathize deeply with the user.`;
     }
   });
 
+  app.post("/api/tasks/sync-calendar/actionable", async (req, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!user?.googleFitAccessToken) {
+        return res.status(401).json({ error: "Google account not connected" });
+      }
+
+      if (user.googleFitAccessToken === "mock_access_token") {
+        return res.status(401).json({ error: "Stored Google token is not a real OAuth token. Reconnect Google Calendar." });
+      }
+
+      const actionable = (await storage.getTasks(getUserId(req)))
+        .filter((task) => !task.completed && task.category !== "not-important-not-urgent");
+
+      if (!actionable.length) {
+        return res.json({ success: true, syncedCount: 0, message: "No actionable tasks to sync." });
+      }
+
+      let fallbackStart = Date.now() + 30 * 60 * 1000;
+      let syncedCount = 0;
+
+      for (const task of actionable) {
+        const startTime = task.dueDate ? new Date(task.dueDate) : new Date(fallbackStart);
+        const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+        fallbackStart = endTime.getTime() + 15 * 60 * 1000;
+
+        const event = {
+          summary: `FocusFlow Task: ${task.title}`,
+          description: task.description || "Synced from FocusFlow actionable matrix",
+          start: { dateTime: startTime.toISOString() },
+          end: { dateTime: endTime.toISOString() },
+        };
+
+        const calRes = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${user.googleFitAccessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(event)
+        });
+
+        if (!calRes.ok) {
+          const errorText = await calRes.text();
+          logFailure("SYNC", "bulk_calendar_sync_failed_google_api", new Error(errorText), { taskId: task.id });
+          return res.status(502).json({ error: "Google Calendar API rejected one of the actionable tasks. Reconnect your Google account and retry." });
+        }
+
+        syncedCount += 1;
+      }
+
+      res.json({
+        success: true,
+        syncedCount,
+        message: `Synced ${syncedCount} actionable tasks to Google Calendar.`,
+      });
+    } catch (error) {
+      logFailure("SYNC", "bulk_calendar_sync_failed", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to bulk sync tasks" });
+    }
+  });
+
   app.get("/api/tasks/category/:category", async (req, res) => {
     try {
       const category = req.params.category;
@@ -1276,7 +1856,7 @@ Use this multi-dimensional data to empathize deeply with the user.`;
   // ─── Settings Save ───
   app.patch("/api/users/settings", async (req, res) => {
     try {
-      const { geminiKey, groqKey } = req.body;
+      const { geminiKey, cerebrasKey, groqKey } = req.body;
 
       if (geminiKey) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
@@ -1297,7 +1877,22 @@ Use this multi-dimensional data to empathize deeply with the user.`;
         if (!testRes.ok) return res.status(400).json({ error: "Invalid Groq API Key" });
       }
 
-      const user = await storage.updateUserSettings(getUserId(req), { geminiKey, groqKey });
+      if (cerebrasKey) {
+        const testRes = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${cerebrasKey}` },
+          body: JSON.stringify({
+            model: process.env.CEREBRAS_MODEL || "gpt-oss-120b",
+            stream: false,
+            temperature: 0,
+            max_tokens: 5,
+            messages: [{ role: "user", content: "hi" }]
+          })
+        });
+        if (!testRes.ok) return res.status(400).json({ error: "Invalid Cerebras API Key" });
+      }
+
+      const user = await storage.updateUserSettings(getUserId(req), { geminiKey, cerebrasKey, groqKey });
       if (!user) return res.status(404).json({ error: "User not found" });
       res.json(user);
     } catch (e) {
@@ -1314,6 +1909,588 @@ Use this multi-dimensional data to empathize deeply with the user.`;
     } catch (e) {
       logFailure("ENGINE", "clear_data_failed", e);
       res.status(500).json({ error: "Failed to clear data" });
+    }
+  });
+
+  // ─── Notes (ported from reference mobile apps) ───
+  app.get("/api/notes", async (req, res) => {
+    try {
+      const notes = await storage.getNotes(getUserId(req));
+      res.json(notes);
+    } catch (error) {
+      logFailure("ENGINE", "get_notes_failed", error);
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  app.post("/api/notes", async (req, res) => {
+    try {
+      const noteData = insertNoteSchema.parse({ ...req.body, userId: getUserId(req) });
+      const note = await storage.createNote(noteData);
+      res.status(201).json(note);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid note data", details: error.errors });
+      } else {
+        logFailure("ENGINE", "create_note_failed", error);
+        res.status(500).json({ error: "Failed to create note" });
+      }
+    }
+  });
+
+  app.patch("/api/notes/:id", async (req, res) => {
+    try {
+      const updated = await storage.updateNote(req.params.id, getUserId(req), req.body);
+      if (!updated) return res.status(404).json({ error: "Note not found" });
+      res.json(updated);
+    } catch (error) {
+      logFailure("ENGINE", "update_note_failed", error);
+      res.status(500).json({ error: "Failed to update note" });
+    }
+  });
+
+  app.delete("/api/notes/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteNote(req.params.id, getUserId(req));
+      if (!success) return res.status(404).json({ error: "Note not found" });
+      res.status(204).send();
+    } catch (error) {
+      logFailure("ENGINE", "delete_note_failed", error);
+      res.status(500).json({ error: "Failed to delete note" });
+    }
+  });
+
+  // ─── Planner / Calendar events (local store + optional Google Calendar sync) ───
+
+  // Map a Google Calendar event to our Event shape (for display only)
+  const mapGoogleEvent = (g: any, userId: string) => {
+    const startIso = g.start?.dateTime || g.start?.date;
+    const endIso = g.end?.dateTime || g.end?.date;
+    const start = startIso ? new Date(startIso) : new Date();
+    const end = endIso ? new Date(endIso) : new Date(start.getTime() + 30 * 60 * 1000);
+    const duration = Math.max(15, Math.round((end.getTime() - start.getTime()) / 60000));
+    return {
+      id: `google:${g.id}`,
+      userId,
+      title: g.summary || "(Untitled event)",
+      description: g.description || null,
+      startTime: start,
+      duration,
+      type: "meeting" as const,
+      priority: "medium" as const,
+      location: g.location || null,
+      googleEventId: g.id,
+      source: "google",
+      createdAt: start,
+      updatedAt: start
+    };
+  };
+
+  app.get("/api/calendar/events", async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const localEvents = await storage.getEvents(userId);
+
+      // Try to enrich with live Google Calendar events if the account is connected
+      let googleEvents: any[] = [];
+      let googleConnected = false;
+      const user = await storage.getUser(userId);
+      const token = user?.googleFitAccessToken;
+      if (token && token !== "mock_access_token") {
+        googleConnected = true;
+        try {
+          const timeMin = new Date();
+          timeMin.setHours(0, 0, 0, 0);
+          const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(timeMin.toISOString())}&maxResults=25&singleEvents=true&orderBy=startTime`;
+          const gRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+          if (gRes.ok) {
+            const json: any = await gRes.json();
+            googleEvents = (json.items || []).map((g: any) => mapGoogleEvent(g, userId));
+          } else {
+            logFailure("SYNC", "calendar_fetch_rejected", new Error(await gRes.text()));
+          }
+        } catch (err) {
+          logFailure("SYNC", "calendar_fetch_failed", err);
+        }
+      }
+
+      const localMarked = localEvents.map((e) => ({ ...e, source: "local" }));
+      const merged = [...localMarked, ...googleEvents].sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+      res.json({ events: merged, googleConnected });
+    } catch (error) {
+      logFailure("ENGINE", "get_events_failed", error);
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/calendar/events", async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const eventData = insertEventSchema.parse({ ...req.body, userId });
+
+      // Persist locally first (always works, no external dependency)
+      const created = await storage.createEvent(eventData);
+
+      // Best-effort push to Google Calendar if connected with a real token
+      const user = await storage.getUser(userId);
+      const token = user?.googleFitAccessToken;
+      if (token && token !== "mock_access_token") {
+        try {
+          const start = new Date(created.startTime);
+          const end = new Date(start.getTime() + (created.duration || 30) * 60 * 1000);
+          const gRes = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              summary: created.title,
+              description: created.description || "Created in FocusFlow Planner",
+              location: created.location || undefined,
+              start: { dateTime: start.toISOString() },
+              end: { dateTime: end.toISOString() }
+            })
+          });
+          if (gRes.ok) {
+            const gJson: any = await gRes.json();
+            const synced = await storage.updateEvent(created.id, userId, { googleEventId: gJson.id });
+            return res.status(201).json({ ...(synced || created), source: "local", googleSynced: true });
+          }
+          logFailure("SYNC", "calendar_create_rejected", new Error(await gRes.text()));
+        } catch (err) {
+          logFailure("SYNC", "calendar_create_failed", err);
+        }
+      }
+
+      res.status(201).json({ ...created, source: "local", googleSynced: false });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid event data", details: error.errors });
+      } else {
+        logFailure("ENGINE", "create_event_failed", error);
+        res.status(500).json({ error: "Failed to create event" });
+      }
+    }
+  });
+
+  app.patch("/api/calendar/events/:id", async (req, res) => {
+    try {
+      const updated = await storage.updateEvent(req.params.id, getUserId(req), req.body);
+      if (!updated) return res.status(404).json({ error: "Event not found" });
+      res.json(updated);
+    } catch (error) {
+      logFailure("ENGINE", "update_event_failed", error);
+      res.status(500).json({ error: "Failed to update event" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteEvent(req.params.id, getUserId(req));
+      if (!success) return res.status(404).json({ error: "Event not found" });
+      res.status(204).send();
+    } catch (error) {
+      logFailure("ENGINE", "delete_event_failed", error);
+      res.status(500).json({ error: "Failed to delete event" });
+    }
+  });
+
+  const getProviderMode = (user: Awaited<ReturnType<typeof storage.getUser>>) =>
+    user?.geminiKey
+      ? "gemini-user-key"
+      : user?.cerebrasKey
+        ? "cerebras-user-key"
+        : user?.groqKey
+        ? "groq-user-key"
+        : process.env.GEMINI_API_KEY
+          ? "gemini-env"
+          : process.env.CEREBRAS_API_KEY
+            ? "cerebras-env"
+          : process.env.GROQ_API_KEY
+            ? "groq-env"
+            : "deterministic-fallback";
+
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+  async function buildAgentWorkspace(userId: string) {
+    const [tasks, focusSessions, journals, triggers, notes, events, fitness, predictions, workoutSessions] = await Promise.all([
+      storage.getTasks(userId),
+      storage.getFocusSessions(userId),
+      storage.getJournals(userId),
+      storage.getStressTriggers(userId),
+      storage.getNotes(userId),
+      storage.getEvents(userId),
+      storage.getFitnessData(userId),
+      storage.getDiseasePredictions(userId),
+      storage.getWorkoutSessions(userId)
+    ]);
+
+    const now = Date.now();
+    const openTasks = tasks.filter(task => !task.completed);
+    const overdueTasks = openTasks.filter(task => task.dueDate && new Date(task.dueDate).getTime() < now);
+    const nextEvents = events.filter(event => new Date(event.startTime).getTime() >= now).slice(0, 5);
+    const latestFitness = fitness[0];
+    const recentTriggers = [...new Set(triggers.slice(0, 8).map(trigger => trigger.label))];
+    const lastJournal = journals[0];
+    const crisisCount = journals.filter(journal => journal.crisisFlag).length;
+    const avgBurnout = journals.length
+      ? Math.round(journals.reduce((sum, journal) => sum + (journal.burnoutScore ?? 0), 0) / journals.length)
+      : 0;
+
+    return {
+      tasks,
+      focusSessions,
+      journals,
+      triggers,
+      notes,
+      events,
+      fitness,
+      predictions,
+      workoutSessions,
+      summary: {
+        openTasks: openTasks.length,
+        overdueTasks: overdueTasks.length,
+        completedTasks: tasks.filter(task => task.completed).length,
+        focusSessions: focusSessions.length,
+        journalEntries: journals.length,
+        notes: notes.length,
+        events: events.length,
+        upcomingEvents: nextEvents.length,
+        fitnessDays: fitness.length,
+        workoutSessions: workoutSessions.length,
+        healthPredictions: predictions.length,
+        latestEmotion: lastJournal?.primaryEmotion ?? "none yet",
+        latestIntensity: lastJournal?.intensityScore ?? 0,
+        avgBurnout,
+        crisisCount,
+        recentTriggers,
+        latestSteps: latestFitness?.steps ?? 0,
+        nextEvents: nextEvents.map(event => ({
+          title: event.title,
+          startTime: event.startTime,
+          priority: event.priority
+        })),
+        topTasks: openTasks
+          .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+          .slice(0, 5)
+          .map(task => ({
+            title: task.title,
+            category: task.category,
+            priority: task.priority,
+            dueDate: task.dueDate
+          })),
+        pinnedNotes: notes.filter(note => note.pinned).slice(0, 4).map(note => note.title),
+      }
+    };
+  }
+
+  function buildWorkspaceInsights(summary: Awaited<ReturnType<typeof buildAgentWorkspace>>["summary"]) {
+    return [
+      {
+        title: "Open tasks",
+        value: String(summary.openTasks),
+        detail: summary.overdueTasks
+          ? `${summary.overdueTasks} open task${summary.overdueTasks === 1 ? "" : "s"} are overdue.`
+          : `${summary.completedTasks} completed task${summary.completedTasks === 1 ? "" : "s"} recorded.`,
+        tone: summary.overdueTasks ? "amber" : "green"
+      },
+      {
+        title: "Journal state",
+        value: String(summary.journalEntries),
+        detail: summary.journalEntries
+          ? `Latest emotion: ${summary.latestEmotion}; intensity ${summary.latestIntensity}/10; average burnout ${summary.avgBurnout}/100.`
+          : "No journal entries are stored for this workspace yet.",
+        tone: summary.crisisCount ? "amber" : "blue"
+      },
+      {
+        title: "Planner",
+        value: String(summary.upcomingEvents),
+        detail: summary.nextEvents.length
+          ? `Next event: ${summary.nextEvents[0].title}.`
+          : "No upcoming planner events are stored.",
+        tone: "purple"
+      },
+      {
+        title: "Health and fitness",
+        value: String(summary.latestSteps),
+        detail: `${summary.fitnessDays} fitness day${summary.fitnessDays === 1 ? "" : "s"}, ${summary.workoutSessions} workout session${summary.workoutSessions === 1 ? "" : "s"}, ${summary.healthPredictions} health prediction${summary.healthPredictions === 1 ? "" : "s"}.`,
+        tone: summary.latestSteps >= 3000 ? "green" : "amber"
+      }
+    ];
+  }
+
+  function buildDailyPulse(summary: Awaited<ReturnType<typeof buildAgentWorkspace>>["summary"]) {
+    if (summary.crisisCount > 0) {
+      return {
+        state: "protect",
+        headline: "Today needs protection first",
+        summary: `${summary.crisisCount} recent high-risk journal entr${summary.crisisCount === 1 ? "y" : "ies"} require a gentler schedule and stronger support boundaries.`
+      };
+    }
+
+    if (summary.overdueTasks > 0 && summary.latestIntensity >= 7) {
+      return {
+        state: "stabilize",
+        headline: "Reduce pressure before adding effort",
+        summary: `${summary.overdueTasks} overdue task${summary.overdueTasks === 1 ? "" : "s"} and elevated journal intensity suggest starting with recovery and one concrete commitment.`
+      };
+    }
+
+    if (summary.openTasks > 0) {
+      return {
+        state: "focus",
+        headline: "You have enough signal to enter a focused block",
+        summary: `${summary.openTasks} open task${summary.openTasks === 1 ? "" : "s"} and ${summary.upcomingEvents} upcoming event${summary.upcomingEvents === 1 ? "" : "s"} can be shaped into a clean execution window.`
+      };
+    }
+
+    return {
+      state: "setup",
+      headline: "Start by creating a healthier baseline",
+      summary: "Your tracker is mostly empty right now, so the best move is to log one task, one reflection, and one focus session to build signal."
+    };
+  }
+
+  function buildFocusProtocol(summary: Awaited<ReturnType<typeof buildAgentWorkspace>>["summary"]) {
+    const movement = summary.latestSteps < 3000
+      ? "Take a short walk or movement reset before sitting down for deep work."
+      : "Keep movement light and steady while you work through the next block.";
+    const planner = summary.nextEvents.length
+      ? `Work around your next event, "${summary.nextEvents[0].title}", before committing to anything long.`
+      : "You have space to reserve a 30 minute focus sprint in the planner.";
+    const journaling = summary.journalEntries
+      ? `Your latest emotional signal is ${summary.latestEmotion} at intensity ${summary.latestIntensity}/10, so choose a pace that matches that state.`
+      : "Write one quick reflection so the system has emotional context for the rest of the day.";
+
+    return [
+      {
+        title: "Protect attention",
+        detail: summary.overdueTasks
+          ? `Clear the highest-pressure item first. ${summary.overdueTasks} overdue task${summary.overdueTasks === 1 ? "" : "s"} are competing for attention.`
+          : "Pick the single next outcome that would make the day feel more under control."
+      },
+      {
+        title: "Align schedule",
+        detail: planner
+      },
+      {
+        title: "Regulate body",
+        detail: movement
+      },
+      {
+        title: "Capture state",
+        detail: journaling
+      }
+    ];
+  }
+
+  function buildMonkModePlan(summary: Awaited<ReturnType<typeof buildAgentWorkspace>>["summary"]) {
+    const recommendedDuration = summary.latestIntensity >= 7 ? 25 : summary.openTasks > 2 ? 45 : 30;
+    const blockers = [
+      "Social media",
+      "Entertainment sites",
+      ...(summary.upcomingEvents > 0 ? ["Non-essential notifications"] : [])
+    ];
+
+    return {
+      recommendedDuration,
+      blockers,
+      summary: summary.openTasks || summary.journalEntries
+        ? `A ${recommendedDuration}-minute protected block is a good fit for your current workload and state.`
+        : "Use a short protected block to start building consistent data and routine."
+    };
+  }
+
+  // ─── COGNO FocusFlow Live Agent Workspace ───
+  app.get("/api/agentic/workspace", async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      const providerMode = getProviderMode(user);
+      const workspace = await buildAgentWorkspace(userId);
+      const availableSignals = [
+        workspace.summary.openTasks + workspace.summary.completedTasks > 0,
+        workspace.summary.journalEntries > 0,
+        workspace.summary.notes > 0,
+        workspace.summary.events > 0,
+        workspace.summary.fitnessDays > 0 || workspace.summary.workoutSessions > 0,
+        workspace.summary.healthPredictions > 0,
+        providerMode !== "deterministic-fallback"
+      ].filter(Boolean).length;
+      const score = clamp(Math.round((availableSignals / 7) * 100), 0, 100);
+      const dailyPulse = buildDailyPulse(workspace.summary);
+      const focusProtocol = buildFocusProtocol(workspace.summary);
+      const monkModePlan = buildMonkModePlan(workspace.summary);
+
+      res.json({
+        title: "COGNO Personal Pulse",
+        tagline: "Health, focus, recovery, and distraction control across your live workspace.",
+        providerMode,
+        readinessScore: score,
+        workspace: workspace.summary,
+        dailyPulse,
+        focusProtocol,
+        monkModePlan,
+        signals: [
+          { label: "Open tasks", value: String(workspace.summary.openTasks), tone: workspace.summary.overdueTasks ? "amber" : "green" },
+          { label: "Journal state", value: `${workspace.summary.journalEntries} entries`, tone: workspace.summary.crisisCount ? "amber" : "blue" },
+          { label: "Planner graph", value: `${workspace.summary.upcomingEvents} upcoming`, tone: "purple" },
+          { label: "Provider route", value: providerMode, tone: providerMode === "deterministic-fallback" ? "amber" : "green" }
+        ],
+        insights: buildWorkspaceInsights(workspace.summary),
+        capabilities: [
+          "Reads the current task list, notes, journals, planner events, fitness data, workout sessions and health predictions.",
+          "Routes requests through the configured user or environment GenAI provider when one is available.",
+          "Returns tool-call traces so the agent output can be checked against actual storage reads."
+        ],
+        safetyStack: [
+          "Pre-computation crisis keyword router",
+          "Workspace summary avoids dumping private raw journal text",
+          "User-owned API keys in settings",
+          "Action output is explainable through tool-call traces"
+        ]
+      });
+    } catch (error) {
+      logFailure("ENGINE", "agentic_workspace_failed", error);
+      res.status(500).json({ error: "Failed to build live COGNO FocusFlow workspace" });
+    }
+  });
+
+  app.post("/api/agentic/run", async (req, res) => {
+    try {
+      const { prompt } = z.object({ prompt: z.string().trim().min(3).max(1200) }).parse(req.body);
+      const userId = getUserId(req);
+      const user = await storage.getUser(userId);
+      const providerMode = getProviderMode(user);
+      const workspace = await buildAgentWorkspace(userId);
+
+      if (detectCrisis(prompt)) {
+        return res.json({
+          providerMode,
+          riskLevel: "crisis",
+          reasoning: createCrisisResponse().message,
+          actions: ["Pause normal planning", "Show crisis support", "Encourage immediate human support"],
+          toolCalls: [
+            { tool: "detectCrisis", input: "prompt", result: "crisis-route" },
+            { tool: "createCrisisResponse", input: "safety-protocol", result: "support-message" }
+          ],
+          nextPlan: [],
+          trace: ["prompt_received", "crisis_detected", "normal_genai_bypassed", "support_response_returned"],
+          generatedAt: new Date().toISOString()
+        });
+      }
+
+      const analyses = workspace.journals.slice(0, 5).map((journal) => ({
+        emotion: journal.primaryEmotion,
+        intensity: journal.intensityScore,
+        burnoutRisk: (journal.burnoutScore ?? 0) / 100,
+        triggers: workspace.triggers.filter(trigger => trigger.journalId === journal.id).map(trigger => trigger.label),
+        crisis: Boolean(journal.crisisFlag)
+      }));
+      const overallMetrics = [
+        `${workspace.summary.openTasks} open tasks`,
+        `${workspace.summary.overdueTasks} overdue tasks`,
+        `${workspace.summary.journalEntries} journal entries`,
+        `${workspace.summary.notes} notes`,
+        `${workspace.summary.upcomingEvents} upcoming events`,
+        `${workspace.summary.latestSteps} latest steps`
+      ].join("; ");
+      const companion = await wellnessOrchestrator.companion({ message: prompt, analyses, overallMetrics }, {
+        gemini: user?.geminiKey || undefined,
+        cerebras: user?.cerebrasKey || undefined,
+        groq: user?.groqKey || undefined
+      });
+
+      const priorityTask = workspace.summary.topTasks[0];
+      const nextEvent = workspace.summary.nextEvents[0];
+      const actions = [
+        priorityTask
+          ? `Start with "${priorityTask.title}" because it is the highest priority open task.`
+          : "Create one concrete task from this prompt before planning anything else.",
+        nextEvent
+          ? `Protect calendar context around "${nextEvent.title}" before adding new commitments.`
+          : "Schedule a 30 minute focus block because no upcoming event is blocking the next action.",
+        workspace.summary.latestIntensity >= 7
+          ? "Run a short regulation step before deep work because the latest journal intensity is high."
+          : "Move directly into execution, then journal a short reflection after the sprint.",
+        workspace.summary.latestSteps < 3000
+          ? "Add a low-friction movement reset because recent fitness activity is low."
+          : "Keep fitness as maintenance; the main bottleneck is cognitive/task load."
+      ];
+
+      res.json({
+        providerMode: companion.provider || providerMode,
+        riskLevel: workspace.summary.crisisCount ? "watch" : "normal",
+        reasoning: companion.value,
+        actions,
+        toolCalls: [
+          { tool: "storage.getTasks", input: userId, result: `${workspace.tasks.length} tasks` },
+          { tool: "storage.getNotes", input: userId, result: `${workspace.notes.length} notes` },
+          { tool: "storage.getJournals", input: userId, result: `${workspace.journals.length} journals` },
+          { tool: "storage.getEvents", input: userId, result: `${workspace.events.length} events` },
+          { tool: "wellnessOrchestrator.companion", input: providerMode, result: companion.fallback ? "fallback-used" : "provider-used" }
+        ],
+        nextPlan: [
+          { title: "Focus sprint", due: "Now + 30 min", why: actions[0] },
+          { title: "Calendar block", due: "Today", why: actions[1] },
+          { title: "Reflection note", due: "After sprint", why: "Keeps COGNO memory fresh for the next agent run." }
+        ],
+        trace: ["prompt_received", "workspace_loaded", "risk_checked", "provider_routed", "actions_generated", "trace_returned"],
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid agent prompt", details: error.errors });
+      logFailure("ENGINE", "agentic_run_failed", error);
+      res.status(500).json({ error: "Failed to run COGNO agent" });
+    }
+  });
+
+  app.post("/api/agentic/execute", async (req, res) => {
+    try {
+      const { actions } = z.object({
+        actions: z.array(z.string().trim().min(3).max(240)).min(1).max(8)
+      }).parse(req.body);
+      const userId = getUserId(req);
+
+      const createdTasks = [];
+      for (const [index, action] of actions.entries()) {
+        const task = await storage.createTask({
+          userId,
+          title: action.length > 96 ? `${action.slice(0, 93)}...` : action,
+          description: `Created from FocusFlow Nexus agent action: ${action}`,
+          category: index === 0 ? "important-urgent" : "important-not-urgent",
+          priority: Math.max(2, 5 - index),
+          completed: false,
+          dueDate: index === 0 ? new Date(Date.now() + 60 * 60 * 1000) : null
+        });
+        createdTasks.push(task);
+      }
+
+      const firstTask = createdTasks[0];
+      const createdEvent = firstTask
+        ? await storage.createEvent({
+            userId,
+            title: `Focus sprint: ${firstTask.title}`,
+            description: "Created by FocusFlow Nexus agent execution.",
+            startTime: new Date(Date.now() + 15 * 60 * 1000),
+            duration: 30,
+            type: "task",
+            priority: "high",
+            location: null,
+            googleEventId: null
+          })
+        : null;
+
+      res.status(201).json({
+        success: true,
+        createdTasks,
+        createdEvent,
+        trace: ["actions_received", "tasks_created", createdEvent ? "planner_event_created" : "planner_event_skipped"]
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid execution request", details: error.errors });
+      logFailure("ENGINE", "agentic_execute_failed", error);
+      res.status(500).json({ error: "Failed to execute COGNO agent actions" });
     }
   });
 

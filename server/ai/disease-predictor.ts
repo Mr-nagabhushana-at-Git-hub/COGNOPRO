@@ -130,8 +130,8 @@ export interface PredictionResponse {
 export const predictRequestSchema = z.object({
   symptoms: z.array(z.string()).min(1, "Select at least one symptom"),
   patientDetails: z.object({
-    name: z.string().min(1),
-    age: z.number().int().min(1).max(150),
+    name: z.string().min(1).optional(),
+    age: z.number().int().min(1).max(150).optional(),
     height: z.number().min(30).max(300),
     weight: z.number().min(2).max(500),
   }).optional(),
@@ -203,7 +203,17 @@ export async function predictWithFallback(selectedSymptoms: string[], patientDet
       const response = await fetch(`${mlApiUrl}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symptoms: selectedSymptoms, patient_details: patientDetails ?? { name: "COGNO User", age: 25, height: 170, weight: 70 } }),
+        body: JSON.stringify({
+          symptoms: selectedSymptoms,
+          patient_details: patientDetails
+            ? {
+                name: patientDetails.name ?? "COGNO User",
+                age: patientDetails.age ?? 25,
+                height: patientDetails.height,
+                weight: patientDetails.weight
+              }
+            : { name: "COGNO User", age: 25, height: 170, weight: 70 }
+        }),
         signal: AbortSignal.timeout(10000),
       });
 

@@ -3,12 +3,22 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Sparkles, Menu, X } from "lucide-react";
+import { Bell, Sparkles, Orbit, Sun, Moon, Laptop } from "lucide-react";
 import type { Notification } from "@shared/schema";
 import MonkModeModal from "@/components/modals/monk-mode-modal";
+import { useTheme } from "@/components/theme-provider";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 
 export default function AppHeader() {
   const [isMonkModeOpen, setIsMonkModeOpen] = useState(false);
+  const { theme, resolvedTheme, setTheme } = useTheme();
 
   const { data: notifications } = useQuery<Notification[]>({
     queryKey: ["/api/notifications/unread"],
@@ -16,10 +26,11 @@ export default function AppHeader() {
   });
 
   const unreadCount = notifications?.length || 0;
+  const ThemeIcon = theme === "system" ? Laptop : resolvedTheme === "dark" ? Moon : Sun;
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-[hsla(225,22%,6%,0.85)] backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Brand */}
@@ -44,6 +55,35 @@ export default function AppHeader() {
 
             {/* Right controls */}
             <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/5"
+                    data-testid="button-theme-toggle"
+                  >
+                    <ThemeIcon className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setTheme("light")} className={theme === "light" ? "bg-accent/60" : ""}>
+                    <Sun className="h-4 w-4" />
+                    Light
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme("dark")} className={theme === "dark" ? "bg-accent/60" : ""}>
+                    <Moon className="h-4 w-4" />
+                    Dark
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme("system")} className={theme === "system" ? "bg-accent/60" : ""}>
+                    <Laptop className="h-4 w-4" />
+                    System
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               {/* Monk Mode */}
               <Button
                 variant="outline"
@@ -52,7 +92,7 @@ export default function AppHeader() {
                 onClick={() => setIsMonkModeOpen(true)}
                 data-testid="button-monk-mode"
               >
-                <span className="mr-1.5">🧘</span>
+                <Orbit className="mr-1.5 h-4 w-4" />
                 <span className="hidden sm:inline font-medium text-xs">Monk Mode</span>
               </Button>
 

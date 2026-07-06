@@ -184,3 +184,29 @@ export class GroqProvider extends RemoteProvider {
     return text;
   }
 }
+
+export class CerebrasProvider extends RemoteProvider {
+  readonly name = "cerebras";
+  readonly configured = Boolean(process.env.CEREBRAS_API_KEY);
+
+  async complete(prompt: string, apiKeyOverride?: string): Promise<string> {
+    const apiKey = apiKeyOverride ?? process.env.CEREBRAS_API_KEY;
+    if (!apiKey) throw new Error("Cerebras API key is required from user settings or environment");
+
+    const body = await requestJson("https://api.cerebras.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.CEREBRAS_MODEL ?? "gpt-oss-120b",
+        stream: false,
+        temperature: 0.2,
+        max_tokens: 700,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    }, 15000) as { choices?: Array<{ message?: { content?: string } }> };
+
+    const text = body.choices?.[0]?.message?.content;
+    if (!text) throw new Error("Cerebras returned no text content");
+    return text;
+  }
+}

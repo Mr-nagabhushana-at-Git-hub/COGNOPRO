@@ -1,27 +1,38 @@
 import type { CompanionContext, JournalAnalysis, ProviderResult } from "@shared/wellness";
 import { fallbackAnalysis, fallbackCompanion } from "./deterministic-fallback";
 import { logEvent, logFailure } from "./logger";
-import { AnthropicProvider, HuggingFaceProvider, OllamaProvider, OpenAiProvider, GeminiProvider, GroqProvider, type AiProvider } from "./providers";
+import { AnthropicProvider, CerebrasProvider, GeminiProvider, GroqProvider, HuggingFaceProvider, OllamaProvider, OpenAiProvider, type AiProvider } from "./providers";
 
 export interface UserKeys {
   gemini?: string;
+  cerebras?: string;
   groq?: string;
 }
 
 export class WellnessOrchestrator {
-  private readonly providers: AiProvider[] = [new GeminiProvider(), new GroqProvider(), new OllamaProvider(), new AnthropicProvider(), new OpenAiProvider(), new HuggingFaceProvider()];
+  private readonly providers: AiProvider[] = [new GeminiProvider(), new CerebrasProvider(), new GroqProvider(), new OllamaProvider(), new AnthropicProvider(), new OpenAiProvider(), new HuggingFaceProvider()];
 
   async analyze(text: string, keys?: UserKeys): Promise<ProviderResult<JournalAnalysis>> {
     logEvent("ROUTER", "analysis_route_started");
     for (const provider of this.providers) {
       // Provider is configured if it has an env key OR the user provided a custom key
-      const hasUserKey = (provider.name === "gemini" && keys?.gemini) || (provider.name === "groq" && keys?.groq);
+      const hasUserKey =
+        (provider.name === "gemini" && keys?.gemini) ||
+        (provider.name === "cerebras" && keys?.cerebras) ||
+        (provider.name === "groq" && keys?.groq);
       if (!provider.configured && !hasUserKey) {
         logEvent("PROVIDER", "provider_skipped_unconfigured", { provider: provider.name });
         continue;
       }
       
-      const apiKey = provider.name === "gemini" ? keys?.gemini : provider.name === "groq" ? keys?.groq : undefined;
+      const apiKey =
+        provider.name === "gemini"
+          ? keys?.gemini
+          : provider.name === "cerebras"
+            ? keys?.cerebras
+            : provider.name === "groq"
+              ? keys?.groq
+              : undefined;
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
@@ -41,10 +52,20 @@ export class WellnessOrchestrator {
   async companion(context: CompanionContext, keys?: UserKeys): Promise<ProviderResult<string>> {
     logEvent("ROUTER", "companion_route_started", { contextEntries: context.analyses.length });
     for (const provider of this.providers) {
-      const hasUserKey = (provider.name === "gemini" && keys?.gemini) || (provider.name === "groq" && keys?.groq);
+      const hasUserKey =
+        (provider.name === "gemini" && keys?.gemini) ||
+        (provider.name === "cerebras" && keys?.cerebras) ||
+        (provider.name === "groq" && keys?.groq);
       if (!provider.configured && !hasUserKey) continue;
       
-      const apiKey = provider.name === "gemini" ? keys?.gemini : provider.name === "groq" ? keys?.groq : undefined;
+      const apiKey =
+        provider.name === "gemini"
+          ? keys?.gemini
+          : provider.name === "cerebras"
+            ? keys?.cerebras
+            : provider.name === "groq"
+              ? keys?.groq
+              : undefined;
 
       try {
         const value = await provider.companion(context, apiKey);
@@ -82,8 +103,8 @@ export class WellnessOrchestrator {
       };
       
       // Combine emotion and text for a much smarter contextual match
-      const emotion = context.analyses[0]?.primaryEmotion?.toLowerCase() || "";
-      const text = context.analyses[0]?.text?.toLowerCase() || "";
+      const emotion = context.analyses[0]?.emotion?.toLowerCase() || "";
+      const text = context.message.toLowerCase();
       const combinedContext = `${emotion} ${text}`;
       
       let videoList = YOUTUBE_LIBRARY.default;

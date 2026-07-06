@@ -6,9 +6,8 @@ import { useRef, useState } from "react";
 import * as THREE from "three";
 import { 
   Target, Dumbbell, Brain, Zap, Activity,
-  ChevronRight, Power
+  CalendarDays, NotebookPen, WandSparkles, Settings, ArrowRight
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 // --- 3D Components ---
 
@@ -83,15 +82,19 @@ function Scene() {
 // --- HUD Component ---
 
 const navItems = [
-  { id: 'tasks', label: 'Task Matrix', icon: Target, path: '/tasks', color: 'from-blue-500 to-cyan-400' },
-  { id: 'fitness', label: 'Command Center', icon: Dumbbell, path: '/fitness', color: 'from-emerald-500 to-teal-400' },
-  { id: 'brain', label: 'Neural Training', icon: Brain, path: '/brain-training', color: 'from-purple-500 to-pink-400' },
-  { id: 'health', label: 'Health Predict', icon: Zap, path: '/health-predict', color: 'from-orange-500 to-red-400' },
-  { id: 'wellness', label: 'Wellness Core', icon: Activity, path: '/wellness', color: 'from-rose-500 to-pink-500' }
+  { id: "tasks", label: "Tasks & Matrix", short: "Tasks", icon: Target, path: "/tasks", color: "from-blue-500 to-cyan-400", detail: "Import, sort, drag, and sync actionable work." },
+  { id: "planner", label: "Planner", short: "Planner", icon: CalendarDays, path: "/planner", color: "from-sky-500 to-indigo-400", detail: "Reserve calendar blocks and protect focus windows." },
+  { id: "notes", label: "Notes", short: "Notes", icon: NotebookPen, path: "/notes", color: "from-violet-500 to-fuchsia-400", detail: "Capture fast context and pinned memory." },
+  { id: "wellness", label: "Mental Wellness", short: "Wellness", icon: Activity, path: "/wellness", color: "from-rose-500 to-pink-500", detail: "Track reflection, burnout, and emotional signal." },
+  { id: "health", label: "Health Predict", short: "Health", icon: Zap, path: "/health-predict", color: "from-orange-500 to-red-400", detail: "Review symptoms and health pattern predictions." },
+  { id: "ultra", label: "Ultra Agent", short: "Ultra", icon: WandSparkles, path: "/ultra", color: "from-amber-500 to-yellow-400", detail: "Personal pulse, monk mode, and routed guidance." },
+  { id: "brain", label: "Brain Training", short: "Brain", icon: Brain, path: "/brain-training", color: "from-purple-500 to-pink-400", detail: "Cognitive drills and performance telemetry." },
+  { id: "fitness", label: "Fitness Tracker", short: "Fitness", icon: Dumbbell, path: "/fitness", color: "from-emerald-500 to-teal-400", detail: "Movement, camera coaching, and body metrics." },
+  { id: "settings", label: "Platform Settings", short: "Settings", icon: Settings, path: "/settings", color: "from-slate-400 to-slate-200", detail: "Providers, health bridges, and security layers." }
 ];
 
 export default function Dashboard() {
-  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+  const [hoveredNav, setHoveredNav] = useState<(typeof navItems)[number] | null>(null);
 
   return (
     <div className="relative w-full h-[calc(100vh-64px)] overflow-hidden bg-[#030712]">
@@ -141,7 +144,8 @@ export default function Dashboard() {
               </div>
               <div className="absolute flex flex-col items-center">
                 <span className="text-white/50 uppercase tracking-widest text-xs font-mono mb-2">Target Lock</span>
-                <span className="text-2xl font-bold text-white tracking-widest">{hoveredNav}</span>
+                <span className="text-center text-2xl font-bold text-white tracking-widest">{hoveredNav.label}</span>
+                <span className="mt-3 max-w-xs text-center text-sm leading-6 text-white/55">{hoveredNav.detail}</span>
               </div>
             </motion.div>
           )}
@@ -152,9 +156,9 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 50 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.8 }}
-          className="w-full max-w-4xl mx-auto pointer-events-auto"
+          className="w-full max-w-6xl mx-auto pointer-events-auto"
         >
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
             {navItems.map((item, i) => {
               const Icon = item.icon;
               return (
@@ -165,17 +169,28 @@ export default function Dashboard() {
                     transition={{ delay: 1 + i * 0.1 }}
                     whileHover={{ y: -10, scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onHoverStart={() => setHoveredNav(item.label)}
+                    onHoverStart={() => setHoveredNav(item)}
                     onHoverEnd={() => setHoveredNav(null)}
-                    className="group relative h-24 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md overflow-hidden cursor-pointer flex flex-col items-center justify-center"
+                    className="group relative h-28 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md overflow-hidden cursor-pointer flex flex-col items-start justify-between p-4"
                   >
                     {/* Hover Gradient Background */}
                     <div className={`absolute inset-0 bg-gradient-to-br ${item.color} opacity-0 group-hover:opacity-20 transition-opacity duration-500`} />
                     
-                    <Icon className="w-8 h-8 text-white/70 group-hover:text-white mb-2 transition-colors duration-300" />
-                    <span className="text-xs font-bold text-white/50 group-hover:text-white uppercase tracking-wider transition-colors duration-300">
-                      {item.label.split(' ')[0]}
-                    </span>
+                    <div className="relative z-10 flex w-full items-start justify-between">
+                      <div className={`rounded-2xl bg-gradient-to-br ${item.color} p-2.5 shadow-[0_0_24px_rgba(59,130,246,0.18)]`}>
+                        <Icon className="h-5 w-5 text-white" />
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-white/35 transition-all duration-300 group-hover:translate-x-0.5 group-hover:text-white/80" />
+                    </div>
+
+                    <div className="relative z-10">
+                      <span className="block text-sm font-bold text-white/95 transition-colors duration-300">
+                        {item.label}
+                      </span>
+                      <span className="mt-1 block text-xs text-white/45 group-hover:text-white/60">
+                        {item.short}
+                      </span>
+                    </div>
 
                     {/* Active Indicator Line */}
                     <div className={`absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r ${item.color} transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left`} />

@@ -18,7 +18,13 @@ import {
   type HealthSymptom,
   type InsertHealthSymptom,
   type DiseasePrediction,
-  type InsertDiseasePrediction
+  type InsertDiseasePrediction,
+  type Note,
+  type InsertNote,
+  type Event,
+  type InsertEvent,
+  type WorkoutSession,
+  type InsertWorkoutSession
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -69,7 +75,25 @@ export interface IStorage {
   getHealthSymptoms(): Promise<HealthSymptom[]>;
   getDiseasePredictions(userId: string): Promise<DiseasePrediction[]>;
   createDiseasePrediction(prediction: InsertDiseasePrediction): Promise<DiseasePrediction>;
-  
+
+  // Note methods
+  getNotes(userId: string): Promise<Note[]>;
+  getNote(id: string, userId: string): Promise<Note | undefined>;
+  createNote(note: InsertNote): Promise<Note>;
+  updateNote(id: string, userId: string, note: Partial<InsertNote>): Promise<Note | undefined>;
+  deleteNote(id: string, userId: string): Promise<boolean>;
+
+  // Event / planner methods
+  getEvents(userId: string): Promise<Event[]>;
+  getEvent(id: string, userId: string): Promise<Event | undefined>;
+  createEvent(event: InsertEvent): Promise<Event>;
+  updateEvent(id: string, userId: string, event: Partial<InsertEvent>): Promise<Event | undefined>;
+  deleteEvent(id: string, userId: string): Promise<boolean>;
+
+  // Workout session methods
+  getWorkoutSessions(userId: string): Promise<WorkoutSession[]>;
+  createWorkoutSession(session: InsertWorkoutSession): Promise<WorkoutSession>;
+
   // Data management
   clearUserData(userId: string): Promise<void>;
 }
@@ -85,6 +109,9 @@ export class MemStorage implements IStorage {
   private stressTriggers: Map<string, StressTrigger> = new Map();
   private healthSymptoms: HealthSymptom[] = [];
   private diseasePredictions: Map<string, DiseasePrediction> = new Map();
+  private notes: Map<string, Note> = new Map();
+  private events: Map<string, Event> = new Map();
+  private workoutSessions: Map<string, WorkoutSession> = new Map();
 
   constructor() {
     this.healthSymptoms = [
@@ -223,18 +250,19 @@ export class MemStorage implements IStorage {
       { id: "s133", name: "depression", description: "Mood depression", category: "mental", createdAt: new Date() },
     ];
 
-    const demoUser: User = {
-      id: "demo-user",
-      username: "alex.johnson",
-      email: "alex@example.com",
-      password: "password123",
+    const localUser: User = {
+      id: "local-user",
+      username: "local.user",
+      email: "local@focusflow.local",
+      password: "local",
       geminiKey: null,
+      cerebrasKey: null,
       groqKey: null,
       googleFitAccessToken: null,
       googleFitRefreshToken: null,
       createdAt: new Date(),
     };
-    this.users.set(demoUser.id, demoUser);
+    this.users.set(localUser.id, localUser);
   }
 
   // User methods
@@ -257,6 +285,7 @@ export class MemStorage implements IStorage {
       id, 
       createdAt: new Date(),
       geminiKey: insertUser.geminiKey ?? null,
+      cerebrasKey: insertUser.cerebrasKey ?? null,
       groqKey: insertUser.groqKey ?? null,
       googleFitAccessToken: insertUser.googleFitAccessToken ?? null,
       googleFitRefreshToken: insertUser.googleFitRefreshToken ?? null
@@ -274,6 +303,7 @@ export class MemStorage implements IStorage {
         email: `${id.substring(0, 8)}@local.dev`,
         password: "auto",
         geminiKey: null,
+        cerebrasKey: null,
         groqKey: null,
         googleFitAccessToken: null,
         googleFitRefreshToken: null,
@@ -285,6 +315,7 @@ export class MemStorage implements IStorage {
       ...user, 
       ...settings,
       geminiKey: settings.geminiKey !== undefined ? settings.geminiKey : user.geminiKey,
+      cerebrasKey: settings.cerebrasKey !== undefined ? settings.cerebrasKey : user.cerebrasKey,
       groqKey: settings.groqKey !== undefined ? settings.groqKey : user.groqKey,
       googleFitAccessToken: settings.googleFitAccessToken !== undefined ? settings.googleFitAccessToken : user.googleFitAccessToken,
       googleFitRefreshToken: settings.googleFitRefreshToken !== undefined ? settings.googleFitRefreshToken : user.googleFitRefreshToken
@@ -540,17 +571,130 @@ export class MemStorage implements IStorage {
     return prediction;
   }
 
+  // Note methods
+  async getNotes(userId: string): Promise<Note[]> {
+    return Array.from(this.notes.values())
+      .filter(note => note.userId === userId)
+      .sort((a, b) => {
+        if ((b.pinned ? 1 : 0) !== (a.pinned ? 1 : 0)) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+        return b.updatedAt!.getTime() - a.updatedAt!.getTime();
+      });
+  }
+
+  async getNote(id: string, userId: string): Promise<Note | undefined> {
+    const note = this.notes.get(id);
+    return note?.userId === userId ? note : undefined;
+  }
+
+  async createNote(insertNote: InsertNote): Promise<Note> {
+    const id = randomUUID();
+    const now = new Date();
+    const note: Note = {
+      ...insertNote,
+      id,
+      title: insertNote.title ?? "Untitled",
+      content: insertNote.content ?? "",
+      color: insertNote.color ?? "default",
+      pinned: insertNote.pinned ?? false,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.notes.set(id, note);
+    return note;
+  }
+
+  async updateNote(id: string, userId: string, updateData: Partial<InsertNote>): Promise<Note | undefined> {
+    const note = this.notes.get(id);
+    if (!note || note.userId !== userId) return undefined;
+    const updatedNote = { ...note, ...updateData, updatedAt: new Date() };
+    this.notes.set(id, updatedNote);
+    return updatedNote;
+  }
+
+  async deleteNote(id: string, userId: string): Promise<boolean> {
+    const note = this.notes.get(id);
+    if (!note || note.userId !== userId) return false;
+    return this.notes.delete(id);
+  }
+
+  // Event / planner methods
+  async getEvents(userId: string): Promise<Event[]> {
+    return Array.from(this.events.values())
+      .filter(event => event.userId === userId)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+  }
+
+  async getEvent(id: string, userId: string): Promise<Event | undefined> {
+    const event = this.events.get(id);
+    return event?.userId === userId ? event : undefined;
+  }
+
+  async createEvent(insertEvent: InsertEvent): Promise<Event> {
+    const id = randomUUID();
+    const now = new Date();
+    const event: Event = {
+      ...insertEvent,
+      id,
+      description: insertEvent.description ?? null,
+      duration: insertEvent.duration ?? 30,
+      type: insertEvent.type ?? "task",
+      priority: insertEvent.priority ?? "medium",
+      location: insertEvent.location ?? null,
+      googleEventId: insertEvent.googleEventId ?? null,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.events.set(id, event);
+    return event;
+  }
+
+  async updateEvent(id: string, userId: string, updateData: Partial<InsertEvent>): Promise<Event | undefined> {
+    const event = this.events.get(id);
+    if (!event || event.userId !== userId) return undefined;
+    const updatedEvent = { ...event, ...updateData, updatedAt: new Date() };
+    this.events.set(id, updatedEvent);
+    return updatedEvent;
+  }
+
+  async deleteEvent(id: string, userId: string): Promise<boolean> {
+    const event = this.events.get(id);
+    if (!event || event.userId !== userId) return false;
+    return this.events.delete(id);
+  }
+
+  // Workout session methods
+  async getWorkoutSessions(userId: string): Promise<WorkoutSession[]> {
+    return Array.from(this.workoutSessions.values())
+      .filter(session => session.userId === userId)
+      .sort((a, b) => b.createdAt!.getTime() - a.createdAt!.getTime());
+  }
+
+  async createWorkoutSession(insertSession: InsertWorkoutSession): Promise<WorkoutSession> {
+    const session: WorkoutSession = {
+      ...insertSession,
+      id: randomUUID(),
+      reps: insertSession.reps ?? 0,
+      avgFormScore: insertSession.avgFormScore ?? 0,
+      peakExertion: insertSession.peakExertion ?? 0,
+      durationSec: insertSession.durationSec ?? 0,
+      caloriesBurned: insertSession.caloriesBurned ?? 0,
+      createdAt: new Date()
+    };
+    this.workoutSessions.set(session.id, session);
+    return session;
+  }
+
   async clearUserData(userId: string): Promise<void> {
-    if (userId !== "demo-user") {
+    if (userId !== "local-user") {
       this.users.delete(userId);
     } else {
-      // Don't delete the demo user account entirely, just reset its keys
-      const demoUser = this.users.get("demo-user");
-      if (demoUser) {
-        demoUser.geminiKey = null;
-        demoUser.groqKey = null;
-        demoUser.googleFitAccessToken = null;
-        demoUser.googleFitRefreshToken = null;
+      const localUser = this.users.get("local-user");
+      if (localUser) {
+        localUser.geminiKey = null;
+        localUser.cerebrasKey = null;
+        localUser.groqKey = null;
+        localUser.googleFitAccessToken = null;
+        localUser.googleFitRefreshToken = null;
       }
     }
 
@@ -563,6 +707,9 @@ export class MemStorage implements IStorage {
     Array.from(this.journals.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.journals.delete(k));
     Array.from(this.stressTriggers.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.stressTriggers.delete(k));
     Array.from(this.diseasePredictions.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.diseasePredictions.delete(k));
+    Array.from(this.notes.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.notes.delete(k));
+    Array.from(this.events.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.events.delete(k));
+    Array.from(this.workoutSessions.entries()).filter(([_, v]) => v.userId === userId).forEach(([k]) => this.workoutSessions.delete(k));
   }
 }
 

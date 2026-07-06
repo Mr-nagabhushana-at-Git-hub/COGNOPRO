@@ -239,7 +239,7 @@ export function useFocusSessionAnalytics() {
     queryFn: async () => {
       const response = await fetch("/api/focus-sessions", {
         headers: {
-          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "demo-user"
+          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "local-user"
         },
       });
       if (!response.ok) {

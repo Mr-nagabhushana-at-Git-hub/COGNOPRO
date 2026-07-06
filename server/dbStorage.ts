@@ -3,12 +3,15 @@ import { eq, desc, and, gte, inArray } from "drizzle-orm";
 import {
   users, tasks, focusSessions, brainGameScores, fitnessData,
   notifications, journals, stressTriggers, healthSymptoms, diseasePredictions,
+  notes, events, workoutSessions,
   type User, type InsertUser, type Task, type InsertTask,
   type FocusSession, type InsertFocusSession, type BrainGameScore,
   type InsertBrainGameScore, type FitnessData, type InsertFitnessData,
   type Notification, type InsertNotification, type Journal,
   type InsertJournal, type StressTrigger, type InsertStressTrigger,
-  type HealthSymptom, type DiseasePrediction, type InsertDiseasePrediction
+  type HealthSymptom, type DiseasePrediction, type InsertDiseasePrediction,
+  type Note, type InsertNote, type Event, type InsertEvent,
+  type WorkoutSession, type InsertWorkoutSession
 } from "@shared/schema";
 import { type IStorage } from "./storage";
 
@@ -197,6 +200,65 @@ export class DatabaseStorage implements IStorage {
     return newPrediction;
   }
 
+  // Note methods
+  async getNotes(userId: string): Promise<Note[]> {
+    return await db.select().from(notes).where(eq(notes.userId, userId)).orderBy(desc(notes.pinned), desc(notes.updatedAt));
+  }
+
+  async getNote(id: string, userId: string): Promise<Note | undefined> {
+    const [note] = await db.select().from(notes).where(and(eq(notes.id, id), eq(notes.userId, userId)));
+    return note;
+  }
+
+  async createNote(note: InsertNote): Promise<Note> {
+    const [newNote] = await db.insert(notes).values(note).returning();
+    return newNote;
+  }
+
+  async updateNote(id: string, userId: string, noteUpdate: Partial<InsertNote>): Promise<Note | undefined> {
+    const [updated] = await db.update(notes).set({ ...noteUpdate, updatedAt: new Date() }).where(and(eq(notes.id, id), eq(notes.userId, userId))).returning();
+    return updated;
+  }
+
+  async deleteNote(id: string, userId: string): Promise<boolean> {
+    const [deleted] = await db.delete(notes).where(and(eq(notes.id, id), eq(notes.userId, userId))).returning();
+    return !!deleted;
+  }
+
+  // Event / planner methods
+  async getEvents(userId: string): Promise<Event[]> {
+    return await db.select().from(events).where(eq(events.userId, userId)).orderBy(events.startTime);
+  }
+
+  async getEvent(id: string, userId: string): Promise<Event | undefined> {
+    const [event] = await db.select().from(events).where(and(eq(events.id, id), eq(events.userId, userId)));
+    return event;
+  }
+
+  async createEvent(event: InsertEvent): Promise<Event> {
+    const [newEvent] = await db.insert(events).values(event).returning();
+    return newEvent;
+  }
+
+  async updateEvent(id: string, userId: string, eventUpdate: Partial<InsertEvent>): Promise<Event | undefined> {
+    const [updated] = await db.update(events).set({ ...eventUpdate, updatedAt: new Date() }).where(and(eq(events.id, id), eq(events.userId, userId))).returning();
+    return updated;
+  }
+
+  async deleteEvent(id: string, userId: string): Promise<boolean> {
+    const [deleted] = await db.delete(events).where(and(eq(events.id, id), eq(events.userId, userId))).returning();
+    return !!deleted;
+  }
+
+  async getWorkoutSessions(userId: string): Promise<WorkoutSession[]> {
+    return await db.select().from(workoutSessions).where(eq(workoutSessions.userId, userId)).orderBy(desc(workoutSessions.createdAt));
+  }
+
+  async createWorkoutSession(session: InsertWorkoutSession): Promise<WorkoutSession> {
+    const [newSession] = await db.insert(workoutSessions).values(session).returning();
+    return newSession;
+  }
+
   async clearUserData(userId: string): Promise<void> {
     await db.delete(tasks).where(eq(tasks.userId, userId));
     await db.delete(focusSessions).where(eq(focusSessions.userId, userId));
@@ -206,5 +268,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(journals).where(eq(journals.userId, userId));
     await db.delete(stressTriggers).where(eq(stressTriggers.userId, userId));
     await db.delete(diseasePredictions).where(eq(diseasePredictions.userId, userId));
+    await db.delete(notes).where(eq(notes.userId, userId));
+    await db.delete(workoutSessions).where(eq(workoutSessions.userId, userId));
+    await db.delete(events).where(eq(events.userId, userId));
   }
 }

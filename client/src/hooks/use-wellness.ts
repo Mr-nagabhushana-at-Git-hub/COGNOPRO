@@ -95,7 +95,7 @@ export function useStreamingCompanion() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "demo-user"
+          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "local-user"
         },
         body: JSON.stringify({ message, ignoredTriggers }),
         signal: controller.signal,

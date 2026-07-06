@@ -7,7 +7,48 @@
    COGNO  ·  Ultra-Premium Design Tokens
    ───────────────────────────────────────────── */
 
-:root {
+:root,
+.light {
+  --background: hsl(210 33% 98%);
+  --foreground: hsl(224 36% 16%);
+  --card: hsla(0 0% 100% / 0.82);
+  --card-foreground: hsl(224 36% 16%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(224 36% 16%);
+  --primary: hsl(226 71% 55%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(188 66% 45%);
+  --secondary-foreground: hsl(0 0% 100%);
+  --muted: hsl(212 26% 92%);
+  --muted-foreground: hsl(220 12% 42%);
+  --accent: hsl(170 72% 42%);
+  --accent-foreground: hsl(210 33% 98%);
+  --destructive: hsl(0 72% 55%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsla(220 27% 25% / 0.12);
+  --input: hsla(220 27% 25% / 0.12);
+  --ring: hsl(226 71% 55%);
+  --chart-1: hsl(226 71% 55%);
+  --chart-2: hsl(165 72% 38%);
+  --chart-3: hsl(188 66% 45%);
+  --chart-4: hsl(35 95% 55%);
+  --chart-5: hsl(340 78% 54%);
+  --radius: 0.75rem;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --gradient-primary: linear-gradient(135deg, hsl(226 71% 55%) 0%, hsl(188 66% 45%) 55%, hsl(170 72% 42%) 100%);
+  --gradient-hero: linear-gradient(135deg, hsl(216 54% 95%) 0%, hsl(196 46% 91%) 48%, hsl(210 33% 98%) 100%);
+  --gradient-card: linear-gradient(145deg, hsla(226 71% 55% / 0.08) 0%, hsla(188 66% 45% / 0.06) 100%);
+  --gradient-glow: radial-gradient(ellipse at 50% 0%, hsla(226 71% 55% / 0.10) 0%, transparent 70%);
+  --glass-bg: hsla(0 0% 100% / 0.72);
+  --glass-border: hsla(226 71% 55% / 0.12);
+  --glass-blur: 20px;
+  --shadow-neon: 0 0 28px -12px hsla(226 71% 55% / 0.28);
+  --shadow-card: 0 12px 34px -18px hsla(220 25% 25% / 0.22), 0 0 0 1px hsla(226 71% 55% / 0.06);
+  --shadow-hover: 0 18px 42px -18px hsla(226 71% 55% / 0.22), 0 0 0 1px hsla(226 71% 55% / 0.12);
+}
+
+.dark {
   /* Core brand */
   --background: hsl(225 25% 4.5%);
   --foreground: hsl(210 40% 96%);
@@ -15,47 +56,31 @@
   --card-foreground: hsl(210 40% 96%);
   --popover: hsl(225 20% 7.5%);
   --popover-foreground: hsl(210 40% 96%);
-
-  /* Primary – Electric Indigo */
   --primary: hsl(245 82% 63%);
   --primary-foreground: hsl(0 0% 100%);
-
-  /* Secondary – Violet Bloom */
   --secondary: hsl(280 72% 58%);
   --secondary-foreground: hsl(0 0% 100%);
-
-  /* Muted surfaces */
   --muted: hsl(225 18% 12%);
   --muted-foreground: hsl(215 20% 55%);
-
-  /* Accent – Cyan glow */
   --accent: hsl(195 100% 50%);
   --accent-foreground: hsl(225 25% 4.5%);
-
   --destructive: hsl(0 72% 55%);
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(225 15% 15%);
   --input: hsl(225 15% 15%);
   --ring: hsl(245 82% 63%);
-
-  /* Chart palette – Vibrant neon tones */
   --chart-1: hsl(245 82% 63%);
   --chart-2: hsl(165 80% 48%);
   --chart-3: hsl(280 72% 58%);
   --chart-4: hsl(35 95% 60%);
   --chart-5: hsl(340 80% 58%);
-
   --radius: 0.75rem;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-
-  /* Gradients */
   --gradient-primary: linear-gradient(135deg, hsl(245 82% 63%) 0%, hsl(280 72% 58%) 50%, hsl(195 100% 50%) 100%);
   --gradient-hero: linear-gradient(135deg, hsl(245 60% 20%) 0%, hsl(280 40% 15%) 50%, hsl(225 25% 8%) 100%);
   --gradient-card: linear-gradient(145deg, hsla(245 82% 63% / 0.06) 0%, hsla(280 72% 58% / 0.04) 100%);
   --gradient-glow: radial-gradient(ellipse at 50% 0%, hsla(245 82% 63% / 0.15) 0%, transparent 70%);
-
-  /* Glass */
   --glass-bg: hsla(225 20% 10% / 0.7);
   --glass-border: hsla(245 82% 63% / 0.15);
   --glass-blur: 20px;
@@ -76,6 +101,10 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground;

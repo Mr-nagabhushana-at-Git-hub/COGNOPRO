@@ -1,4 +1,4 @@
-type LogScope = "ENGINE" | "ROUTER" | "PROVIDER" | "FAILOVER" | "CRISIS" | "OAUTH" | "FITNESS";
+type LogScope = "ENGINE" | "ROUTER" | "PROVIDER" | "FAILOVER" | "CRISIS" | "OAUTH" | "FITNESS" | "SYNC" | "COACH";
 
 export function logEvent(scope: LogScope, event: string, details: Record<string, unknown> = {}): void {
   console.info(JSON.stringify({ timestamp: new Date().toISOString(), scope: `[${scope}]`, event, ...details }));

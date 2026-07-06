@@ -4,6 +4,11 @@ import { useToast } from "@/hooks/use-toast";
 import type { Task, InsertTask } from "@shared/schema";
 
 type TaskInput = Omit<InsertTask, "userId">;
+type ImportTasksResult = {
+  importedCount: number;
+  mode: string;
+  created: Task[];
+};
 
 export function useTasks() {
   const queryClient = useQueryClient();
@@ -143,6 +148,57 @@ export function useTasks() {
     syncTaskToCalendarMutation.mutate(id);
   };
 
+  const syncActionableTasksMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/tasks/sync-calendar/actionable");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Calendar Updated",
+        description: data.message || `Synced ${data.syncedCount ?? 0} actionable tasks to Google Calendar.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Bulk Sync Failed",
+        description: error.message || "Could not sync actionable tasks to Google Calendar.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const importTasksMutation = useMutation({
+    mutationFn: async ({ fileName, content }: { fileName: string; content: string }) => {
+      const response = await apiRequest("POST", "/api/tasks/import", { fileName, content });
+      return response.json() as Promise<ImportTasksResult>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics"] });
+      toast({
+        title: "Import Complete",
+        description: `Imported ${data.importedCount} tasks using ${data.mode} sorting.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Import Failed",
+        description: error.message || "Could not process this file.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const syncActionableTasksToCalendar = () => {
+    syncActionableTasksMutation.mutate();
+  };
+
+  const importTasksFromFile = async (file: File) => {
+    const content = await file.text();
+    return importTasksMutation.mutateAsync({ fileName: file.name, content });
+  };
+
   // Get tasks by category
   const getTasksByCategory = (category: string) => {
     return tasks?.filter(task => task.category === category) || [];
@@ -214,6 +270,10 @@ export function useTasks() {
     getTasksDueToday,
     syncTaskToCalendar,
     syncTaskToCalendarMutation,
+    syncActionableTasksToCalendar,
+    syncActionableTasksMutation,
+    importTasksFromFile,
+    importTasksMutation,
   };
 }
 
@@ -226,7 +286,7 @@ export function useTasksByCategory(category: string) {
     queryFn: async () => {
       const response = await fetch(`/api/tasks/category/${category}`, {
         headers: { 
-          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "demo-user"
+          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "local-user"
         },
       });
       if (!response.ok) {
@@ -245,7 +305,7 @@ export function useTask(id: string) {
     queryFn: async () => {
       const response = await fetch(`/api/tasks/${id}`, {
         headers: { 
-          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "demo-user"
+          "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "local-user"
         },
       });
       if (!response.ok) {
