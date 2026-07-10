@@ -71,10 +71,12 @@ export default function TasksGraph() {
   const {
     tasks,
     isLoading,
+    error,
     toggleTask,
     deleteTask,
     createTask,
     updateTask,
+    refetch,
     getTaskStats,
     syncTaskToCalendar,
     syncTaskToCalendarMutation,
@@ -85,6 +87,8 @@ export default function TasksGraph() {
   } = useTasks();
 
   const stats = getTaskStats();
+  const taskList = tasks ?? [];
+  const taskErrorMessage = error instanceof Error ? error.message : null;
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,16 +122,43 @@ export default function TasksGraph() {
     setActiveDropZone(null);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[calc(100vh-64px)] items-center justify-center">
-        <div className="h-16 w-16 animate-spin rounded-full border-4 border-[hsl(245,82%,63%)] border-t-transparent glow-primary" />
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-[1680px] flex-col gap-6 p-4 sm:p-6 lg:p-8">
+      {(isLoading || taskErrorMessage) && (
+        <div className={`rounded-2xl border p-4 ${
+          taskErrorMessage
+            ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+            : "border-indigo-500/25 bg-indigo-500/10 text-indigo-100"
+        }`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              {taskErrorMessage ? (
+                <AlertCircle className="h-5 w-5 shrink-0" />
+              ) : (
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+              )}
+              <div>
+                <p className="text-sm font-semibold">
+                  {taskErrorMessage ? "Tasks API is not responding cleanly" : "Refreshing tasks"}
+                </p>
+                <p className="mt-1 text-xs opacity-80">
+                  {taskErrorMessage || "The matrix is usable while the latest tasks load."}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -281,7 +312,7 @@ export default function TasksGraph() {
         </div>
 
         {quadrants.map((quad) => {
-          const quadTasks = tasks?.filter((t) => t.category === quad.id) || [];
+          const quadTasks = taskList.filter((t) => t.category === quad.id);
           const isActiveDrop = activeDropZone === quad.id;
 
           return (

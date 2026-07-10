@@ -10,6 +10,37 @@ type ImportTasksResult = {
   created: Task[];
 };
 
+const TASKS_QUERY_TIMEOUT_MS = 8000;
+
+async function fetchTasksWithTimeout(): Promise<Task[]> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), TASKS_QUERY_TIMEOUT_MS);
+
+  try {
+    const response = await fetch("/api/tasks", {
+      headers: {
+        "X-Device-Id": localStorage.getItem("FOCUSFLOW_DEVICE_ID") || "local-user",
+      },
+      credentials: "include",
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+      throw new Error("Vercel Authentication blocked the tasks API request.");
+    }
+
+    if (!response.ok) {
+      const text = (await response.text()) || response.statusText;
+      throw new Error(`${response.status}: ${text}`);
+    }
+
+    return response.json();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export function useTasks() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -18,11 +49,13 @@ export function useTasks() {
   const {
     data: tasks,
     isLoading,
+    isFetching,
     error,
     refetch
   } = useQuery({
     queryKey: ["/api/tasks"],
-    select: (data) => data as Task[],
+    queryFn: fetchTasksWithTimeout,
+    initialData: [] as Task[],
   });
 
   // Create task mutation
@@ -245,8 +278,8 @@ export function useTasks() {
 
   return {
     // Data
-    tasks,
-    isLoading,
+    tasks: tasks ?? [],
+    isLoading: isLoading || isFetching,
     error,
     
     // Mutations state
